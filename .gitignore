@@ -1,0 +1,21 @@
+venv/
+__pycache__/
+*.pyc
+.env
+
+# Runtime artifacts
+downloads/
+audio/
+clips/
+Output_Clips/
+transcripts/
+*.wav
+*.mp4
+*.mkv
+*.webm
+
+# OS / editor / tooling
+.DS_Store
+.vscode/
+.idea/
+.claude/

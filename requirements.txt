@@ -1,0 +1,17 @@
+yt-dlp>=2025.1.0
+faster-whisper>=1.2.0
+moviepy>=2.1.0
+ffmpeg-python>=0.2.0
+scenedetect[opencv]>=0.6.7
+pydub>=0.25.1
+numpy>=2.0
+rich>=14.0
+tqdm>=4.67
+python-dotenv>=1.0
+
+# Torch — install sesuai hardware:
+#   CPU          : pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+#   NVIDIA CUDA  : pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+#   NVIDIA libs  : pip install nvidia-cublas-cu11 nvidia-cudnn-cu11   (khusus CUDA + faster-whisper)
+torch>=2.5
+torchaudio>=2.5
