@@ -16,6 +16,7 @@ Gratis, lokal, tanpa API berbayar. Auto-detect hardware (CPU/NVIDIA CUDA/Intel-A
 - **Highlight detection** — opsi alternatif berdasarkan keyword/hook phrase viral
 - **9:16 center crop** — otomatis portrait 720p atau 1080p
 - **Subtitle burn-in viral style** — bold, kuning/putih, border hitam tebal, di tengah layar
+- **Smart subtitle chunking** — subtitle dipecah jadi chunks 4-6 kata dengan prioritas break di titik/koma/pause natural (ala TikTok/Reels), auto-merge orphan
 - **Hardware acceleration** — auto-pilih NVENC > VAAPI > QSV > libx264
 - **Parallel rendering** — render N clip bersamaan di hardware encoder
 - **Cross-platform** — satu perintah yang sama di Linux, Windows, macOS
@@ -49,7 +50,7 @@ URL YouTube
 
 - **Python** 3.10 atau lebih baru
 - **FFmpeg** 5.0+ (dengan filter `subtitles` dan salah satu encoder H.264)
-- **Storage** ~2 GB (untuk Python dependencies + model Whisper base)
+- **Storage** ~2.5 GB (untuk Python dependencies + model Whisper small)
 
 ---
 
@@ -125,7 +126,7 @@ pip install torch torchaudio
 
 ## Cara Pakai
 
-### Quick Start
+### Quick Start (Mode Interaktif)
 
 ```bash
 # Aktifkan venv (Linux/macOS)
@@ -133,11 +134,48 @@ source venv/bin/activate
 # Windows:
 venv\Scripts\activate
 
-# Download + transkripsi + auto-clip — pipeline lengkap
+# Cukup kasih URL, sisanya dipandu prompt
 python main.py "https://youtu.be/VIDEO_ID"
 ```
 
+Terminal akan menampilkan pilihan:
+```
+Mode Interaktif (tekan Enter untuk pakai default)
+
+Model Whisper (akurasi vs kecepatan)
+  1) tiny         75 MB,  ~3 menit  — akurasi rendah
+  2) base         145 MB, ~8 menit  — akurasi sedang
+  3) small        465 MB, ~15 menit — akurasi baik (RECOMMENDED) [default]
+  4) medium       1.5 GB, ~30 menit — akurasi tinggi
+  5) large-v3     3 GB,   ~50 menit — akurasi terbaik
+Pilih [3]:
+
+Resolusi output
+  1) 720          720x1280   — ~4x lebih cepat [default]
+  2) 1080         1080x1920  — FHD
+Pilih [1]:
+
+Batasi jumlah clip (0 = semua) [0]:
+Initial prompt untuk boost akurasi vocab (kosong = skip) []:
+
+Mulai proses? (y/n) [y]:
+```
+
 Output siap pakai di folder `Output_Clips/`.
+
+### Skip Interaktif (Pakai Default)
+
+```bash
+# Langsung jalan dengan default semua (-y = yes, skip prompt)
+python main.py "https://youtu.be/VIDEO_ID" -y
+```
+
+### Mode Advanced (Pakai Flag Spesifik)
+
+Kalau kasih flag apapun selain URL, mode interaktif otomatis skip:
+```bash
+python main.py "https://youtu.be/VIDEO_ID" --model medium --output-resolution 1080 --parallel 2
+```
 
 ### Contoh Lebih Lengkap
 
@@ -148,10 +186,34 @@ python main.py "https://youtube.com/@NamaChannel" \
   --limit 3
 ```
 
-**Mode cepat (720p + parallel):**
+**Preview 1 clip saja (untuk testing):**
 ```bash
 python main.py "https://youtu.be/XXXX" \
-  --model tiny \
+  --model small \
+  --max-clips 1 \
+  --output-resolution 720
+```
+
+**Boost akurasi transkrip dengan initial prompt:**
+```bash
+python main.py "https://youtu.be/XXXX" \
+  --model small \
+  --initial-prompt "mindset, bisnis, koneksi, uang, sukses"
+```
+
+**Custom chunking subtitle (ultra-fast vs longgar):**
+```bash
+# High-energy TikTok style (3-4 kata per chunk)
+python main.py "URL" --subtitle-min-words 3 --subtitle-max-words 4
+
+# Lebih smooth untuk konten edukasi (6-9 kata)
+python main.py "URL" --subtitle-min-words 6 --subtitle-max-words 9
+```
+
+**Mode cepat (parallel + 720p):**
+```bash
+python main.py "https://youtu.be/XXXX" \
+  --model base \
   --output-resolution 720 \
   --parallel 2
 ```
@@ -190,8 +252,9 @@ python main.py "https://youtu.be/XXXX" --no-viral
 ### Transkripsi
 | Flag | Default | Deskripsi |
 |---|---|---|
-| `--model` | `base` | `tiny`, `base`, `small`, `medium`, `large-v3` |
+| `--model` | `small` | `tiny`, `base`, `small`, `medium`, `large-v3` |
 | `--language` | `auto` | `auto` (deteksi otomatis), `id`, `en`, dll |
+| `--initial-prompt` | — | Kata kunci konteks untuk boost akurasi vocab (contoh: `"mindset, bisnis, koneksi"`) |
 | `--no-transcribe` | — | Skip transkripsi dan clipping |
 
 ### Strategi Clipping
@@ -213,6 +276,8 @@ python main.py "https://youtu.be/XXXX" --no-viral
 | `--subtitle-color` | `yellow` | `yellow` atau `white` |
 | `--font` | auto | Nama font — default per platform |
 | `--font-size` | `18` | Ukuran font subtitle |
+| `--subtitle-min-words` | `4` | Minimal kata per chunk subtitle |
+| `--subtitle-max-words` | `6` | Maksimal kata per chunk subtitle (gaya viral TikTok/Reels) |
 | `--output-resolution` | `1080` | `720` atau `1080` (tinggi 9:16) |
 
 ### Akselerasi
@@ -220,6 +285,12 @@ python main.py "https://youtu.be/XXXX" --no-viral
 |---|---|---|
 | `--encoder` | `auto` | `auto`, `libx264`, `h264_vaapi`, `h264_nvenc`, `h264_qsv` |
 | `--parallel` | `1` | Render N clip bersamaan |
+| `--max-clips` | `0` | Batasi jumlah clip per video (0 = semua) — berguna untuk preview |
+
+### UX
+| Flag | Default | Deskripsi |
+|---|---|---|
+| `-y`, `--yes` | — | Skip mode interaktif, pakai default/flag langsung |
 
 ### Output
 | Flag | Default | Deskripsi |
@@ -265,7 +336,7 @@ python main.py "URL" 2>&1 | head -1
 | Device | Compute | Dipakai kapan |
 |---|---|---|
 | `cuda` / `float16` | NVIDIA GPU + CUDA 11.8+ + cuDNN | Otomatis kalau tersedia |
-| `cpu` / `int8` | CPU (8 threads) | Fallback, sudah cukup cepat dengan model `base` |
+| `cpu` / `int8` | CPU (8 threads) | Fallback, sudah cukup cepat dengan model `small` |
 
 ### FFmpeg Encoder
 
@@ -277,6 +348,35 @@ Priority: NVENC > VAAPI > QSV > libx264. Tiap kandidat di-smoke-test untuk memas
 | `h264_vaapi` | Intel/AMD iGPU | Linux |
 | `h264_qsv` | Intel Quick Sync Video | Linux, Windows |
 | `libx264` | CPU (fallback) | Semua |
+
+---
+
+## Smart Subtitle Chunking
+
+Subtitle tidak sekadar di-split per N kata (yang kaku), tapi pakai logika natural break + anti-orphan:
+
+### Prioritas Break (saat cari posisi split)
+1. **Hard break** — akhir kata ada `.` `!` `?` (akhir kalimat)
+2. **Soft break** — akhir kata ada `,` `;` `:` (koma)
+3. **Pause bicara** — gap antar kata ≥ 0.4 detik (hanya kalau word-timestamps aktif)
+4. **Max words** — fallback kalau tidak ada break natural
+
+### Anti-Orphan Logic
+- Kalau mengambil max_words akan menyisakan orphan < min_words → **redistribusi rata** (contoh: 8 kata tidak jadi 6+2, tapi 4+4)
+- Kalau setelah semua chunk masih ada orphan ≤ (min-2) → **merge ke chunk sebelumnya**
+
+### Contoh Hasil (min=4, max=6)
+
+| Input | Output | Alasan |
+|---|---|---|
+| `"Rahasia sukses itu adalah konsistensi, dalam hal kecil setiap hari"` | `[5, 5]` | Break di koma |
+| `"Saya punya satu tips penting. Kita harus konsisten setiap hari ya"` | `[5, 6]` | Break di titik |
+| `"Ini pelajaran sangat penting untuk kesuksesan dan mindset"` (8w, no punct) | `[4, 4]` | Redistribusi rata anti-orphan |
+| `"Satu dua tiga empat lima enam tujuh delapan sembilan sepuluh sebelas duabelas tigabelas empatbelas"` (14w) | `[6, 4, 4]` | Redistribusi dari [6, 6, 2] |
+| `"Halo teman-teman semua"` (3w, < min) | `[3]` | Tidak dipecah (sudah pendek) |
+
+### Word-Level Timestamp
+Saat transkripsi, `word_timestamps=True` otomatis aktif → setiap kata punya start/end sendiri, sehingga timing subtitle akurat per kata (bukan cuma proportional split). Menambah ~10-20% waktu transkripsi tapi worth it untuk kualitas viral.
 
 ---
 
@@ -298,13 +398,18 @@ Uji pada sumber 120 detik 1080p30, rendering 4 clip viral masing-masing 20 detik
 
 | Tahap | CPU-only Linux | 1080 Ti Windows |
 |---|---|---|
-| Whisper `base` transkripsi 10 menit | ~60s | ~6-8s |
+| Whisper `small` transkripsi 10 menit | ~150s | ~12-18s |
 | Render 4 clip viral 1080p | ~68s | ~15s |
 | **Pipeline total** | baseline | **~5x lebih cepat** |
 
-Kombinasi paling optimal:
+Kombinasi paling optimal (speed-quality balance):
 ```bash
-python main.py "URL" --model tiny --output-resolution 720 --parallel 2
+python main.py "URL" --model small --output-resolution 720 --parallel 2
+```
+
+Kombinasi tercepat (akurasi rendah, untuk test/preview):
+```bash
+python main.py "URL" --model tiny --output-resolution 720 --parallel 2 --max-clips 1
 ```
 
 ---
@@ -378,7 +483,7 @@ sudo usermod -aG video,render $USER
 ```
 
 ### Whisper model download lambat
-Model disimpan di `~/.cache/huggingface/hub`. Download pertama sekitar 145 MB untuk `base`. Proxy setting via environment `HF_ENDPOINT` atau `HTTP_PROXY` kalau perlu.
+Model disimpan di `~/.cache/huggingface/hub`. Download pertama sekitar 465 MB untuk `small` (default), 145 MB untuk `base`, 1.5 GB untuk `medium`. Proxy setting via environment `HF_ENDPOINT` atau `HTTP_PROXY` kalau perlu.
 
 ---
 

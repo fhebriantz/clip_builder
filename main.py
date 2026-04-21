@@ -1,8 +1,12 @@
 """CLI entry point — AI Video Clipper (pipeline penuh).
 
 URL → download → WAV → transkripsi → highlight detection → potong clip.
+
+Mode interaktif aktif otomatis kalau user cuma kasih URL (tanpa flag lain).
+Pakai flag `--yes` untuk skip prompt dan langsung jalan pakai default.
 """
 import argparse
+import sys
 from pathlib import Path
 
 from rich.console import Console
@@ -29,11 +33,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--transcript-dir", default="transcripts")
     p.add_argument("--clip-dir", default="Output_Clips",
                    help="Folder output clip (default: Output_Clips)")
-    p.add_argument("--model", default="base",
+    p.add_argument("--model", default="small",
                    choices=["tiny", "base", "small", "medium", "large-v3"],
-                   help="Ukuran model Whisper (default: base)")
+                   help="Ukuran model Whisper (default: small — akurasi baik untuk bahasa Indonesia)")
     p.add_argument("--language", default="auto",
                    help="Bahasa audio: 'auto' (default, deteksi otomatis), 'id', 'en', dll.")
+    p.add_argument("--initial-prompt", default=None,
+                   help="Kata kunci konteks untuk bias vocab Whisper "
+                        "(contoh: 'mindset, koneksi, bisnis, uang'). "
+                        "Membantu akurasi istilah spesifik tanpa ganti model.")
 
     # Clipping strategy
     p.add_argument("--strategy", default="density",
@@ -67,6 +75,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--font", default=None,
                    help="Nama font subtitle (default: auto per platform — "
                         "DejaVu Sans di Linux, Arial di Windows, Helvetica di macOS)")
+    p.add_argument("--subtitle-min-words", type=int, default=4,
+                   help="Minimal kata per chunk subtitle (default: 4)")
+    p.add_argument("--subtitle-max-words", type=int, default=6,
+                   help="Maksimal kata per chunk subtitle (default: 6, gaya viral)")
 
     # Acceleration
     p.add_argument("--encoder", default="auto",
@@ -76,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Tinggi target clip viral: 720 (HD, ~2x lebih cepat) atau 1080 (FHD)")
     p.add_argument("--parallel", type=int, default=1,
                    help="Render N clip bersamaan (disarankan 2-3 untuk hw encoder)")
+    p.add_argument("--max-clips", type=int, default=0,
+                   help="Batasi jumlah clip yang di-render per video (0 = semua)")
+
+    # UX
+    p.add_argument("-y", "--yes", action="store_true",
+                   help="Skip mode interaktif, langsung pakai default/flag")
 
     # Skip flags
     p.add_argument("--no-transcribe", action="store_true",
@@ -85,8 +103,91 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _ask(prompt: str, default: str) -> str:
+    try:
+        val = input(f"{prompt} [{default}]: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        console.print("\n[red]Dibatalkan.[/red]")
+        sys.exit(0)
+    return val or default
+
+
+def _ask_choice(prompt: str, options: list[tuple[str, str]], default_idx: int) -> str:
+    """options = [(value, description)]. default_idx 0-based."""
+    console.print(f"\n[bold]{prompt}[/bold]")
+    for i, (val, desc) in enumerate(options, 1):
+        marker = " [default]" if i - 1 == default_idx else ""
+        console.print(f"  {i}) {val:12} {desc}{marker}")
+    raw = _ask("Pilih", str(default_idx + 1))
+    try:
+        idx = int(raw) - 1
+        if 0 <= idx < len(options):
+            return options[idx][0]
+    except ValueError:
+        pass
+    return options[default_idx][0]
+
+
+def interactive_prompt(args: argparse.Namespace) -> argparse.Namespace:
+    """Tanya user 4 opsi utama — yang lain tetap default."""
+    console.print("\n[bold cyan]Mode Interaktif[/bold cyan] [dim](tekan Enter untuk pakai default)[/dim]")
+
+    args.model = _ask_choice(
+        "Model Whisper (akurasi vs kecepatan)",
+        [
+            ("tiny",     "75 MB,  ~3 menit  — akurasi rendah"),
+            ("base",     "145 MB, ~8 menit  — akurasi sedang"),
+            ("small",    "465 MB, ~15 menit — akurasi baik (RECOMMENDED)"),
+            ("medium",   "1.5 GB, ~30 menit — akurasi tinggi"),
+            ("large-v3", "3 GB,   ~50 menit — akurasi terbaik"),
+        ],
+        default_idx=2,  # small
+    )
+
+    res = _ask_choice(
+        "Resolusi output",
+        [("720", "720x1280   — ~4x lebih cepat"),
+         ("1080", "1080x1920  — FHD")],
+        default_idx=0,  # 720
+    )
+    args.output_resolution = int(res)
+
+    mc = _ask("Batasi jumlah clip (0 = semua)", "0")
+    try:
+        args.max_clips = max(0, int(mc))
+    except ValueError:
+        args.max_clips = 0
+
+    ip = _ask("Initial prompt untuk boost akurasi vocab (kosong = skip)", "")
+    args.initial_prompt = ip or None
+
+    console.print("\n[bold]Ringkasan:[/bold]")
+    console.print(f"  Model        : [cyan]{args.model}[/cyan]")
+    console.print(f"  Resolusi     : [cyan]{args.output_resolution}x{int(args.output_resolution * 16 / 9)}[/cyan]")
+    console.print(f"  Max clips    : [cyan]{args.max_clips or 'semua'}[/cyan]")
+    if args.initial_prompt:
+        console.print(f"  Initial prompt: [cyan]{args.initial_prompt[:60]}{'...' if len(args.initial_prompt) > 60 else ''}[/cyan]")
+    console.print(f"  Strategi     : {args.strategy} · target {args.target_duration}s · parallel {args.parallel}")
+
+    confirm = _ask("\nMulai proses? (y/n)", "y").lower()
+    if confirm not in ("y", "yes", "ya"):
+        console.print("[red]Dibatalkan.[/red]")
+        sys.exit(0)
+    return args
+
+
+def _only_url_given(argv: list[str]) -> bool:
+    """True kalau user cuma kasih URL (tanpa flag konfigurasi)."""
+    # argv[1] = URL positional. Flag apapun = tidak interactive.
+    return len(argv) <= 2
+
+
 def main() -> None:
     args = build_parser().parse_args()
+
+    # Auto-aktifkan interactive kalau cuma URL yang di-pass, kecuali user pakai -y
+    if not args.yes and _only_url_given(sys.argv):
+        args = interactive_prompt(args)
 
     set_encoder_override(args.encoder)
     console.print(f"[dim]Akselerasi: {describe_accel()}[/dim]")
@@ -119,7 +220,12 @@ def main() -> None:
         video = Path(r["video_path"])
         console.print(f"\n[{i}/{len(results)}] {wav.name}")
 
-        transcript = transcribe(wav, language=language, model_size=args.model)
+        transcript = transcribe(
+            wav,
+            language=language,
+            model_size=args.model,
+            initial_prompt=args.initial_prompt,
+        )
         json_path = save_transcript(transcript, transcript_dir)
         srt_path = save_srt(transcript, transcript_dir)
         r["transcript_json"] = str(json_path)
@@ -163,6 +269,13 @@ def main() -> None:
             r["clips"] = []
             continue
 
+        if args.max_clips > 0 and len(clips_meta) > args.max_clips:
+            console.print(
+                f"  [yellow]Batasi ke {args.max_clips} clip pertama "
+                f"(dari {len(clips_meta)} kandidat) sesuai --max-clips[/yellow]"
+            )
+            clips_meta = clips_meta[: args.max_clips]
+
         # 720 → 720x1280, 1080 → 1080x1920 (portrait 9:16)
         tw = args.output_resolution
         th = int(tw * 16 / 9)
@@ -178,6 +291,8 @@ def main() -> None:
             target_width=tw,
             target_height=th,
             parallel=args.parallel,
+            subtitle_min_words=args.subtitle_min_words,
+            subtitle_max_words=args.subtitle_max_words,
         )
         r["clips"] = [str(p) for p in clip_paths]
 

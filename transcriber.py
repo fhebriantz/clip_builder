@@ -52,11 +52,14 @@ def transcribe(
     language: str | None = None,
     model_size: str = "base",
     vad_filter: bool = True,
+    initial_prompt: str | None = None,
 ) -> dict:
     """Return {audio, language, duration, segments: [{start, end, text}, ...]}.
 
     language: None (default) = auto-detect. Atau 'id', 'en', 'ja', dll untuk paksa.
     vad_filter: skip bagian sunyi → lebih cepat & akurat.
+    initial_prompt: kata kunci konteks untuk bias vocab (contoh: "mindset, koneksi, bisnis").
+                    Membantu mengoreksi typo pada istilah spesifik tanpa re-train model.
     """
     model = load_model(model_size)
 
@@ -65,12 +68,19 @@ def transcribe(
         language=language,
         beam_size=5,
         vad_filter=vad_filter,
+        initial_prompt=initial_prompt,
+        word_timestamps=True,
     )
 
-    segments = [
-        {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip()}
-        for s in segments_iter
-    ]
+    segments = []
+    for s in segments_iter:
+        seg = {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip()}
+        if s.words:
+            seg["words"] = [
+                {"start": round(w.start, 3), "end": round(w.end, 3), "text": w.word.strip()}
+                for w in s.words
+            ]
+        segments.append(seg)
 
     return {
         "audio": str(wav_path),

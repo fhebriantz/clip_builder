@@ -189,29 +189,176 @@ def _fmt_srt(t: float) -> str:
     return f"{int(h):02d}:{int(m):02d}:{int(s):02d},{ms:03d}"
 
 
+_PUNCT_BREAK = set(".!?")
+_PUNCT_SOFT = set(",;:")
+
+
+def _find_split_indices(
+    n: int,
+    min_w: int,
+    max_w: int,
+    has_break_at: callable,
+    has_soft_break_at: callable,
+) -> list[tuple[int, int]]:
+    """Greedy: cari split point di [min, max], prefer hard break > soft break > max.
+    Return list of (start, end) exclusive."""
+    chunks: list[tuple[int, int]] = []
+    i = 0
+    while i < n:
+        upper = min(i + max_w, n)
+        lower = min(i + min_w, n)
+
+        # Kalau sisa kurang dari atau sama dengan max, semua masuk chunk terakhir
+        if upper == n:
+            chunks.append((i, n))
+            break
+
+        # Scan [lower-1 .. upper-1]: prioritas hard break (titik/tanya/seru)
+        best_end = None
+        for j in range(lower - 1, upper):
+            if has_break_at(j):
+                best_end = j + 1
+                break
+        # Kalau tidak ada hard break, coba soft break (koma)
+        if best_end is None:
+            for j in range(lower - 1, upper):
+                if has_soft_break_at(j):
+                    best_end = j + 1
+                    break
+        # Terakhir: tidak ada natural break. Kalau taking max bikin orphan,
+        # redistribute rata. Kalau tidak, pakai max.
+        if best_end is None:
+            remaining_if_max = n - upper
+            if 0 < remaining_if_max < min_w:
+                total = n - i
+                best_end = i + (total + 1) // 2  # round up
+            else:
+                best_end = upper
+
+        chunks.append((i, best_end))
+        i = best_end
+
+    # Orphan merge: hanya merge kalau orphan sangat kecil (<= min-2),
+    # misal min=4: merge orphan 1-2 kata. Orphan 3 tetap jadi chunk sendiri
+    # (lebih baik dari 1 chunk kepanjangan).
+    if len(chunks) >= 2:
+        ls, le = chunks[-1]
+        ps, pe = chunks[-2]
+        orphan_size = le - ls
+        if orphan_size <= max(1, min_w - 2) and (pe - ps) + orphan_size <= max_w + min_w // 2:
+            chunks[-2] = (ps, le)
+            chunks.pop()
+
+    return chunks
+
+
+def _rechunk_segment(
+    seg: dict,
+    min_words: int = 4,
+    max_words: int = 6,
+    pause_threshold: float = 0.4,
+) -> list[dict]:
+    """Pecah segment jadi chunks subtitle dengan range [min_words, max_words].
+
+    Prioritas break:
+      1. Hard break: titik/tanya/seru di akhir kata (.!?)
+      2. Soft break: koma/titik-koma (,;:)
+      3. Pause bicara (gap antar kata >= pause_threshold, hanya kalau ada word timestamp)
+      4. Max_words (fallback)
+
+    Orphan chunk terakhir (< min_words) di-merge ke chunk sebelumnya kalau muat.
+    """
+    text = seg["text"]
+    start, end = seg["start"], seg["end"]
+
+    words = seg.get("words")
+
+    # Path 1: word-level timestamp (akurat, bisa deteksi pause)
+    if words:
+        n = len(words)
+        if n <= max_words:
+            return [seg]
+
+        def has_hard_break(j: int) -> bool:
+            t = words[j]["text"]
+            if t and t[-1] in _PUNCT_BREAK:
+                return True
+            # Pause setelah kata juga dianggap hard break
+            if j < n - 1:
+                gap = words[j + 1]["start"] - words[j]["end"]
+                if gap >= pause_threshold:
+                    return True
+            return False
+
+        def has_soft_break(j: int) -> bool:
+            t = words[j]["text"]
+            return bool(t) and t[-1] in _PUNCT_SOFT
+
+        splits = _find_split_indices(n, min_words, max_words, has_hard_break, has_soft_break)
+        return [
+            {
+                "start": words[s]["start"],
+                "end": words[e - 1]["end"],
+                "text": " ".join(words[k]["text"] for k in range(s, e)).strip(),
+            }
+            for s, e in splits
+        ]
+
+    # Path 2: text saja — break di punctuation, timing proportional
+    tokens = text.split()
+    n = len(tokens)
+    if n <= max_words:
+        return [seg]
+
+    def has_hard_break(j: int) -> bool:
+        t = tokens[j]
+        return bool(t) and t[-1] in _PUNCT_BREAK
+
+    def has_soft_break(j: int) -> bool:
+        t = tokens[j]
+        return bool(t) and t[-1] in _PUNCT_SOFT
+
+    splits = _find_split_indices(n, min_words, max_words, has_hard_break, has_soft_break)
+    duration = max(end - start, 0.001)
+    return [
+        {
+            "start": start + duration * (s / n),
+            "end": start + duration * (e / n),
+            "text": " ".join(tokens[s:e]),
+        }
+        for s, e in splits
+    ]
+
+
 def make_clip_subtitle(
     segments: list[dict],
     clip_start: float,
     clip_end: float,
     output_path: Path,
+    min_words: int = 4,
+    max_words: int = 6,
 ) -> Path:
-    """Bikin SRT untuk 1 clip — timestamp digeser jadi relatif dari 0."""
+    """Bikin SRT untuk 1 clip — subtitle dipecah jadi chunks [min_words, max_words]
+    dengan prioritas break di titik/koma/pause natural."""
     lines: list[str] = []
     idx = 1
     for seg in segments:
         if seg["end"] <= clip_start or seg["start"] >= clip_end:
             continue
-        rel_start = max(0.0, seg["start"] - clip_start)
-        rel_end = min(clip_end - clip_start, seg["end"] - clip_start)
-        if rel_end <= rel_start:
-            continue
-        lines += [
-            str(idx),
-            f"{_fmt_srt(rel_start)} --> {_fmt_srt(rel_end)}",
-            seg["text"],
-            "",
-        ]
-        idx += 1
+        for chunk in _rechunk_segment(seg, min_words=min_words, max_words=max_words):
+            if chunk["end"] <= clip_start or chunk["start"] >= clip_end:
+                continue
+            rel_start = max(0.0, chunk["start"] - clip_start)
+            rel_end = min(clip_end - clip_start, chunk["end"] - clip_start)
+            if rel_end <= rel_start:
+                continue
+            lines += [
+                str(idx),
+                f"{_fmt_srt(rel_start)} --> {_fmt_srt(rel_end)}",
+                chunk["text"],
+                "",
+            ]
+            idx += 1
     output_path.write_text("\n".join(lines))
     return output_path
 
@@ -255,6 +402,8 @@ def render_viral_clip(
     font_size: int = 18,
     target_width: int = 1080,
     target_height: int = 1920,
+    subtitle_min_words: int = 4,
+    subtitle_max_words: int = 6,
 ) -> Path:
     """Cut + vertical 9:16 center crop + burn-in subtitle (bold, kuning/putih, outline hitam).
 
@@ -273,7 +422,10 @@ def render_viral_clip(
     output_abs = str(Path(output_path).resolve())
 
     srt_tmp = output_path.with_suffix(".tmp.srt")
-    make_clip_subtitle(segments, start, end, srt_tmp)
+    make_clip_subtitle(
+        segments, start, end, srt_tmp,
+        min_words=subtitle_min_words, max_words=subtitle_max_words,
+    )
 
     primary = _SUB_COLORS.get(color, _SUB_COLORS["yellow"])
     # Alignment=5 = middle-center (di tengah layar). Outline=3 = border tebal hitam.
@@ -333,6 +485,8 @@ def generate_clips(
     target_width: int = 1080,
     target_height: int = 1920,
     parallel: int = 1,
+    subtitle_min_words: int = 4,
+    subtitle_max_words: int = 6,
 ) -> list[Path]:
     """Render semua potongan.
 
@@ -357,6 +511,8 @@ def generate_clips(
                 video_path, h["start"], h["end"], segments, out,
                 color=subtitle_color, font=font, font_size=font_size,
                 target_width=target_width, target_height=target_height,
+                subtitle_min_words=subtitle_min_words,
+                subtitle_max_words=subtitle_max_words,
             )
         else:
             cut_clip(video_path, h["start"], h["end"], out)
