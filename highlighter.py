@@ -399,16 +399,19 @@ def render_viral_clip(
     output_path: Path,
     color: str = "yellow",
     font: str | None = None,
-    font_size: int = 18,
+    font_size: int = 14,
     target_width: int = 1080,
     target_height: int = 1920,
     subtitle_min_words: int = 4,
     subtitle_max_words: int = 6,
+    subtitle_margin_bottom_pct: float = 0.25,
 ) -> Path:
     """Cut + vertical 9:16 center crop + burn-in subtitle (bold, kuning/putih, outline hitam).
 
     Output: mp4 portrait siap-upload ke TikTok/Reels/Shorts.
     font=None → pakai DEFAULT_FONT per platform.
+    subtitle_margin_bottom_pct: jarak subtitle dari tepi bawah sebagai pct tinggi
+        (0.3 = 30% dari bawah, posisi lower-third klasik gaya viral).
     """
     if font is None:
         font = DEFAULT_FONT
@@ -428,7 +431,11 @@ def render_viral_clip(
     )
 
     primary = _SUB_COLORS.get(color, _SUB_COLORS["yellow"])
-    # Alignment=5 = middle-center (di tengah layar). Outline=3 = border tebal hitam.
+    # Alignment=2 = bottom-center. MarginV diukur dalam script units libass
+    # (PlayResY default = 288), BUKAN pixel video langsung. Jadi pct 0.3 →
+    # MarginV ~86, yang setelah di-scale ke video 1280 tinggi jadi ~384 pixel
+    # dari tepi bawah (≈ 30% dari bawah, sesuai yang diminta).
+    margin_v = int(288 * subtitle_margin_bottom_pct)
     force_style = (
         f"FontName={font},"
         f"FontSize={font_size},"
@@ -438,8 +445,8 @@ def render_viral_clip(
         f"Outline=3,"
         f"Shadow=0,"
         f"Bold=1,"
-        f"Alignment=5,"
-        f"MarginV=0"
+        f"Alignment=2,"
+        f"MarginV={margin_v}"
     )
 
     enc = detect_ffmpeg_encoder()
@@ -480,13 +487,14 @@ def generate_clips(
     segments: list[dict] | None = None,
     viral: bool = True,
     subtitle_color: str = "yellow",
-    font_size: int = 18,
+    font_size: int = 14,
     font: str | None = None,
     target_width: int = 1080,
     target_height: int = 1920,
     parallel: int = 1,
     subtitle_min_words: int = 4,
     subtitle_max_words: int = 6,
+    subtitle_margin_bottom_pct: float = 0.25,
 ) -> list[Path]:
     """Render semua potongan.
 
@@ -513,6 +521,7 @@ def generate_clips(
                 target_width=target_width, target_height=target_height,
                 subtitle_min_words=subtitle_min_words,
                 subtitle_max_words=subtitle_max_words,
+                subtitle_margin_bottom_pct=subtitle_margin_bottom_pct,
             )
         else:
             cut_clip(video_path, h["start"], h["end"], out)

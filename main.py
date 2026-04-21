@@ -70,8 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Skip 9:16 crop + subtitle burn-in, hanya potong mentah")
     p.add_argument("--subtitle-color", default="yellow", choices=["yellow", "white"],
                    help="Warna teks subtitle (default: yellow)")
-    p.add_argument("--font-size", type=int, default=18,
-                   help="Ukuran font subtitle (default: 18)")
+    p.add_argument("--font-size", type=int, default=14,
+                   help="Ukuran font subtitle (default: 14)")
+    p.add_argument("--subtitle-margin-top", type=float, default=0.75,
+                   help="Posisi subtitle sebagai fraksi dari atas (default: 0.75 = 75%% dari atas)")
     p.add_argument("--font", default=None,
                    help="Nama font subtitle (default: auto per platform — "
                         "DejaVu Sans di Linux, Arial di Windows, Helvetica di macOS)")
@@ -293,6 +295,7 @@ def main() -> None:
             parallel=args.parallel,
             subtitle_min_words=args.subtitle_min_words,
             subtitle_max_words=args.subtitle_max_words,
+            subtitle_margin_bottom_pct=1.0 - args.subtitle_margin_top,
         )
         r["clips"] = [str(p) for p in clip_paths]
 

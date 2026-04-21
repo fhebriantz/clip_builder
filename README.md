@@ -275,9 +275,10 @@ python main.py "https://youtu.be/XXXX" --no-viral
 | `--no-viral` | — | Skip 9:16 + subtitle, raw cut saja (instant) |
 | `--subtitle-color` | `yellow` | `yellow` atau `white` |
 | `--font` | auto | Nama font — default per platform |
-| `--font-size` | `18` | Ukuran font subtitle |
+| `--font-size` | `14` | Ukuran font subtitle |
 | `--subtitle-min-words` | `4` | Minimal kata per chunk subtitle |
 | `--subtitle-max-words` | `6` | Maksimal kata per chunk subtitle (gaya viral TikTok/Reels) |
+| `--subtitle-margin-top` | `0.75` | Posisi subtitle sebagai fraksi dari atas (0.75 = 75% dari atas = lower-third) |
 | `--output-resolution` | `1080` | `720` atau `1080` (tinggi 9:16) |
 
 ### Akselerasi
