@@ -532,7 +532,17 @@ def build_app():
 
         dummy = gr.State(None)
 
+        # Chain: disable button + spinner → run pipeline → enable button
+        def _btn_start():
+            return gr.update(interactive=False, value="⏳ Memproses... (lihat terminal untuk progress)")
+
+        def _btn_done():
+            return gr.update(interactive=True, value="🚀 Generate Clips")
+
         run_btn.click(
+            fn=_btn_start,
+            outputs=run_btn,
+        ).then(
             fn=run_pipeline,
             inputs=[
                 url, batch_file,
@@ -549,6 +559,10 @@ def build_app():
                 no_cache, no_viral,
             ],
             outputs=[status, video_preview, files_list, meta_display, meta_json, dummy],
+            show_progress="full",
+        ).then(
+            fn=_btn_done,
+            outputs=run_btn,
         )
 
         # === Wire quick-action buttons ===

@@ -522,6 +522,7 @@ def generate_clips(
     subtitle_max_words: int = 6,
     subtitle_margin_bottom_pct: float = 0.25,
     smart_crop: bool = False,
+    run_timestamp: str | None = None,
 ) -> list[Path]:
     """Render semua potongan.
 
@@ -531,8 +532,23 @@ def generate_clips(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Anti-overwrite: kalau ada file clip dengan nama sama, append timestamp.
+    # Decision-once di awal — semua clip dari run ini share timestamp yang sama
+    # kalau ada conflict di salah satunya.
+    _use_ts = False
+    if run_timestamp:
+        for _i in range(1, len(clips_meta) + 1):
+            if (output_dir / f"{video_path.stem}_clip_{_i:02d}.mp4").exists():
+                _use_ts = True
+                break
+
+    def _clip_output_path(idx: int) -> Path:
+        if _use_ts and run_timestamp:
+            return output_dir / f"{video_path.stem}_clip_{idx:02d}_{run_timestamp}.mp4"
+        return output_dir / f"{video_path.stem}_clip_{idx:02d}.mp4"
+
     def _render_one(idx: int, h: dict) -> tuple[int, Path]:
-        out = output_dir / f"{video_path.stem}_clip_{idx:02d}.mp4"
+        out = _clip_output_path(idx)
         tag = h.get("score", h.get("segment_count", "?"))
         label = "score" if "score" in h else "segs"
         console.print(

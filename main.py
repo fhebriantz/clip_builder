@@ -8,6 +8,7 @@ Pakai flag `--yes` untuk skip prompt dan langsung jalan pakai default.
 import argparse
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 
 from rich.console import Console
@@ -535,6 +536,10 @@ def main() -> None:
         }
         tw, th = _res_table[(args.aspect, args.output_resolution)]
 
+        # Timestamp per-run untuk anti-overwrite (clip file dengan nama sama
+        # di Output_Clips/ akan ditambah suffix _YYYYmmdd_HHMMSS)
+        run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+
         save_highlights(clips_meta, video.stem, transcript_dir)
         clip_paths = generate_clips(
             video, clips_meta, clip_dir,
@@ -550,6 +555,7 @@ def main() -> None:
             subtitle_max_words=args.subtitle_max_words,
             subtitle_margin_bottom_pct=1.0 - args.subtitle_margin_top,
             smart_crop=args.smart_crop,
+            run_timestamp=run_ts,
         )
         r["clips"] = [str(p) for p in clip_paths]
 
