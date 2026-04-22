@@ -45,21 +45,27 @@ if errorlevel 1 (
 
 REM === [3/4] Setup virtual environment + install dependencies (hanya pertama kali) ===
 if not exist venv (
-    echo [SETUP] Membuat virtual environment pertama kali...
+    echo ------------------------------------------------------------
+    echo [3.1/4] Membuat virtual environment pertama kali...
+    echo         ^(tunggu ~10-30 detik^)
+    echo ------------------------------------------------------------
     python -m venv venv
     if errorlevel 1 (
         echo [ERROR] Gagal membuat venv. Pastikan Python 3.10+ terinstall.
         pause
         exit /b 1
     )
+    echo     ^> venv created
     echo.
 )
 
 call venv\Scripts\activate.bat
 
 if not exist venv\.installed (
-    echo [SETUP] Install dependencies dari requirements.txt...
-    echo.
+    echo ------------------------------------------------------------
+    echo [3.2/4] Install dependencies dari requirements.txt
+    echo         ^(tunggu ~3-5 menit, pip akan tampilkan progress bar^)
+    echo ------------------------------------------------------------
     python -m pip install --upgrade pip
     pip install -r requirements.txt
     if errorlevel 1 (
@@ -67,44 +73,56 @@ if not exist venv\.installed (
         pause
         exit /b 1
     )
+    echo     ^> requirements.txt installed
 
     echo.
-    echo [SETUP] Deteksi GPU NVIDIA...
+    echo ------------------------------------------------------------
+    echo [3.3/4] Deteksi GPU NVIDIA + install PyTorch
+    echo ------------------------------------------------------------
     where nvidia-smi >nul 2>&1
     if errorlevel 1 (
-        echo    Tidak ada GPU NVIDIA terdeteksi.
-        echo    Install torch CPU-only...
+        echo    ^> Tidak ada GPU NVIDIA terdeteksi.
+        echo    ^> Install torch CPU-only ^(~1-2 menit^)...
         pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
     ) else (
-        echo    GPU NVIDIA terdeteksi.
-        echo    Install torch CUDA 11.8 + cuBLAS/cuDNN...
+        echo    ^> GPU NVIDIA terdeteksi.
+        echo    ^> Install torch CUDA 11.8 + cuBLAS/cuDNN ^(~3-5 menit, ~3GB download^)...
         pip uninstall -y torch torchaudio
         pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
         pip install nvidia-cublas-cu11 nvidia-cudnn-cu11
     )
+    echo     ^> torch installed
 
     REM Marker: tandai sudah ter-install biar run berikutnya skip step ini
     type nul > venv\.installed
     echo.
-    echo [SETUP] Setup selesai!
+    echo ============================================================
+    echo [SETUP SELESAI] Semua dependencies terinstall!
+    echo ============================================================
     echo.
-    echo OPSIONAL: untuk fitur AI (smart highlight, metadata, polish, translate),
-    echo           buat file .env di folder ini dengan isi:
+    echo TIP: untuk fitur AI ^(smart highlight, metadata, polish, translate^),
+    echo      buat file .env di folder ini dengan isi:
     echo.
-    echo               GROQ_API_KEY=gsk_xxxxxxxxxxxxx
+    echo          GROQ_API_KEY=gsk_xxxxxxxxxxxxx
     echo.
-    echo   Daftar gratis di https://console.groq.com (pakai login Google/GitHub)
-    echo   Tanpa .env, fitur AI auto-skip, pipeline utama tetap jalan.
+    echo      Daftar gratis di https://console.groq.com
+    echo      Tanpa .env, fitur AI auto-skip, pipeline utama tetap jalan.
     echo.
     pause
 )
 
 REM === [4/4] Jalankan Web UI ===
+echo.
 echo ============================================================
-echo   Menjalankan Web UI di http://127.0.0.1:7860
-echo   Browser akan terbuka otomatis.
-echo   Tekan Ctrl+C di jendela ini untuk stop server.
+echo [4/4] Menjalankan Web UI
 echo ============================================================
+echo   URL    : http://127.0.0.1:7860
+echo   Browser: akan terbuka otomatis dalam beberapa detik
+echo   Stop   : Ctrl+C di jendela ini
+echo ============================================================
+echo.
+echo ^(saat klik Generate di browser, loading spinner akan muncul^)
+echo ^(progress detail Whisper/FFmpeg/AI terlihat di jendela ini^)
 echo.
 
 python app.py
