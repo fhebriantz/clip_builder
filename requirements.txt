@@ -2,6 +2,7 @@ yt-dlp>=2025.1.0
 faster-whisper>=1.2.0
 groq>=0.13.0
 mediapipe>=0.10.0
+gradio>=6.0
 moviepy>=2.1.0
 ffmpeg-python>=0.2.0
 scenedetect[opencv]>=0.6.7
