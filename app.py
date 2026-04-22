@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
@@ -279,6 +280,21 @@ def build_app():
         )
         gr.Markdown(ai_banner)
 
+        # === Quick Action Bar ===
+        with gr.Row():
+            disable_ai_btn = gr.Button(
+                "🚫 Matikan Semua AI (rate-limit safe)",
+                variant="secondary", size="sm",
+            )
+            open_folder_btn = gr.Button(
+                "📁 Buka Folder Output",
+                variant="secondary", size="sm",
+            )
+        gr.Markdown(
+            "<sub>💡 Klik **Matikan AI** kalau rate-limit Groq tercapai atau mau run cepat tanpa API. "
+            "Setting AI akan di-reset ke off dan strategy ke density.</sub>"
+        )
+
         with gr.Row():
             # ═══ LEFT: INPUTS ═══
             with gr.Column(scale=1):
@@ -534,6 +550,48 @@ def build_app():
             ],
             outputs=[status, video_preview, files_list, meta_display, meta_json, dummy],
         )
+
+        # === Wire quick-action buttons ===
+        def _disable_all_ai():
+            """Reset semua AI toggle ke off, strategy ke density, kosongkan translate."""
+            gr.Info("🚫 Semua fitur AI dimatikan. Strategy di-set ke density.")
+            return (
+                False,       # use_metadata
+                False,       # use_hook
+                False,       # render_hook
+                False,       # use_polish
+                "density",   # strategy
+                "",          # translate_to
+                "",          # polish_topic
+                "",          # polish_vocab
+                "",          # polish_fix
+            )
+
+        disable_ai_btn.click(
+            fn=_disable_all_ai,
+            outputs=[
+                use_metadata, use_hook, render_hook, use_polish,
+                strategy, translate_to,
+                polish_topic, polish_vocab, polish_fix,
+            ],
+        )
+
+        def _open_output_folder():
+            """Buka folder Output_Clips di file manager OS."""
+            OUTPUT_DIR.mkdir(exist_ok=True)
+            system = platform.system()
+            try:
+                if system == "Windows":
+                    os.startfile(str(OUTPUT_DIR))
+                elif system == "Darwin":
+                    subprocess.Popen(["open", str(OUTPUT_DIR)])
+                else:
+                    subprocess.Popen(["xdg-open", str(OUTPUT_DIR)])
+                gr.Info(f"📁 Folder terbuka: {OUTPUT_DIR}")
+            except Exception as e:
+                gr.Warning(f"Gagal buka folder: {e}")
+
+        open_folder_btn.click(fn=_open_output_folder, outputs=None)
 
         gr.Markdown(
             "---\n"
