@@ -35,7 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         description="AI Video Clipper — download, transkrip, dan auto-clip highlight",
     )
-    p.add_argument("url", help="Link video tunggal ATAU link channel YouTube")
+    p.add_argument("url", nargs="?", default=None,
+                   help="Link video tunggal ATAU link channel YouTube (wajib kalau tanpa --batch)")
+    p.add_argument("--batch", default=None,
+                   help="Path ke file .txt berisi daftar URL (1 per baris). "
+                        "Baris kosong & baris diawali '#' di-skip.")
     p.add_argument("-k", "--keyword", default="",
                    help="Filter judul video (contoh: 'Bisnis'). Kosong = semua.")
     p.add_argument("-n", "--limit", type=int, default=3,
@@ -278,24 +282,73 @@ def _only_url_given(argv: list[str]) -> bool:
     return len(argv) <= 2
 
 
+def _read_batch_urls(path: Path) -> list[str]:
+    """Baca URL dari file .txt, skip baris kosong & comment (#)."""
+    urls: list[str] = []
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        urls.append(line)
+    return urls
+
+
 def main() -> None:
     args = build_parser().parse_args()
 
-    # Auto-aktifkan interactive kalau cuma URL yang di-pass, kecuali user pakai -y
-    if not args.yes and _only_url_given(sys.argv):
+    # Validasi: butuh url ATAU batch, tidak boleh dua-duanya kosong
+    if not args.url and not args.batch:
+        console.print("[red]Error: butuh URL atau --batch path/to/urls.txt[/red]")
+        sys.exit(1)
+    if args.url and args.batch:
+        console.print("[red]Error: pilih salah satu — URL positional ATAU --batch, bukan keduanya[/red]")
+        sys.exit(1)
+
+    # Auto-aktifkan interactive kalau cuma URL yang di-pass, kecuali user pakai -y / --batch
+    if not args.yes and not args.batch and _only_url_given(sys.argv):
         args = interactive_prompt(args)
 
     set_encoder_override(args.encoder)
     console.print(f"[dim]Akselerasi: {describe_accel()}[/dim]")
 
-    # --- Step 1-2: download + WAV ---
-    results = process_input(
-        url=args.url,
-        keyword=args.keyword or None,
-        limit=args.limit,
-        download_dir=Path(args.download_dir),
-        audio_dir=Path(args.audio_dir),
-    )
+    # --- Step 1-2: download + WAV (support batch: loop per URL) ---
+    if args.batch:
+        batch_path = Path(args.batch)
+        if not batch_path.exists():
+            console.print(f"[red]Batch file tidak ditemukan: {batch_path}[/red]")
+            sys.exit(1)
+        urls = _read_batch_urls(batch_path)
+        if not urls:
+            console.print(f"[red]File batch kosong: {batch_path}[/red]")
+            sys.exit(1)
+
+        console.print(f"\n[bold cyan]Batch mode: {len(urls)} URL[/bold cyan]")
+        results: list[dict] = []
+        batch_fail: list[tuple[str, str]] = []
+        for bi, bu in enumerate(urls, 1):
+            console.print(f"\n[bold yellow]═══ [{bi}/{len(urls)}] {bu}[/bold yellow]")
+            try:
+                partial = process_input(
+                    url=bu,
+                    keyword=args.keyword or None,
+                    limit=args.limit,
+                    download_dir=Path(args.download_dir),
+                    audio_dir=Path(args.audio_dir),
+                )
+                results.extend(partial)
+            except Exception as e:
+                console.print(f"[red]✗ Gagal download URL {bi}: {e}[/red]")
+                batch_fail.append((bu, str(e)))
+    else:
+        results = process_input(
+            url=args.url,
+            keyword=args.keyword or None,
+            limit=args.limit,
+            download_dir=Path(args.download_dir),
+            audio_dir=Path(args.audio_dir),
+        )
+        batch_fail = []
+
     if not results:
         console.print("[red]Tidak ada video diproses. Berhenti.[/red]")
         return
@@ -551,6 +604,11 @@ def main() -> None:
     console.print(
         f"\n[bold green]Selesai. {len(results)} video · {total_clips} clip dihasilkan.[/bold green]"
     )
+    if batch_fail:
+        console.print(f"\n[yellow]⚠ {len(batch_fail)} URL gagal di batch:[/yellow]")
+        for url, err in batch_fail:
+            console.print(f"  [dim]- {url}[/dim]")
+            console.print(f"    [red]{err[:100]}[/red]")
 
 
 if __name__ == "__main__":

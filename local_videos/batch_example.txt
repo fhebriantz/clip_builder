@@ -1,0 +1,8 @@
+# Contoh file batch — 1 URL per baris
+# Baris kosong & yang diawali '#' di-skip
+
+# Video yang sudah ada di cache
+https://www.youtube.com/watch?v=kFhF0ArcMQs
+
+# Video lain (opsional — hapus kalau mau cepat)
+# https://www.youtube.com/watch?v=9xo4pOaTsxY
