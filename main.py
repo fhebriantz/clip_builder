@@ -6,10 +6,22 @@ Mode interaktif aktif otomatis kalau user cuma kasih URL (tanpa flag lain).
 Pakai flag `--yes` untuk skip prompt dan langsung jalan pakai default.
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 
 from rich.console import Console
+
+
+def _env_file_has_groq() -> bool:
+    """Cek cepat apakah .env punya GROQ_API_KEY (tanpa load dotenv dulu)."""
+    env = Path(".env")
+    if not env.exists():
+        return False
+    try:
+        return "GROQ_API_KEY=" in env.read_text() and "GROQ_API_KEY=\n" not in env.read_text()
+    except Exception:
+        return False
 
 from accel import describe as describe_accel, set_encoder_override
 from downloader import process_input
@@ -134,6 +146,13 @@ def _ask(prompt: str, default: str) -> str:
     return val or default
 
 
+def _ask_yn(prompt: str, default: bool = False) -> bool:
+    """Tanya y/n. Default jadi huruf besar di prompt."""
+    default_str = "Y/n" if default else "y/N"
+    ans = _ask(prompt + f" ({default_str})", "Y" if default else "N").lower()
+    return ans in ("y", "yes", "ya", "1", "true")
+
+
 def _ask_choice(prompt: str, options: list[tuple[str, str]], default_idx: int) -> str:
     """options = [(value, description)]. default_idx 0-based."""
     console.print(f"\n[bold]{prompt}[/bold]")
@@ -183,10 +202,50 @@ def interactive_prompt(args: argparse.Namespace) -> argparse.Namespace:
     ip = _ask("Initial prompt untuk boost akurasi vocab (kosong = skip)", "")
     args.initial_prompt = ip or None
 
+    # --- Face tracking (non-AI, selalu available) ---
+    args.smart_crop = _ask_yn(
+        "Aktifkan smart crop (face tracking auto-follow speaker)?",
+        default=True,
+    )
+
+    # --- AI features (hanya tampil kalau GROQ_API_KEY ada) ---
+    has_groq = bool(os.environ.get("GROQ_API_KEY")) or _env_file_has_groq()
+    if has_groq:
+        console.print("\n[bold yellow]Fitur AI (Groq) terdeteksi:[/bold yellow]")
+
+        use_ai_strategy = _ask_yn(
+            "Pakai AI smart highlight (LLM pilih momen viral-worthy)?",
+            default=True,
+        )
+        if use_ai_strategy:
+            args.strategy = "ai"
+
+        args.ai_polish = _ask_yn(
+            "Polish subtitle (fix typo + hapus filler via LLM)?",
+            default=False,
+        )
+        if args.ai_polish:
+            topic = _ask("  Topik video (opsional, bantu fix typo ambigu)", "")
+            args.polish_topic = topic or None
+
+        args.ai_metadata = _ask_yn(
+            "Generate title/description/hashtag viral?",
+            default=True,
+        )
+    else:
+        console.print(
+            "\n[dim]Fitur AI di-skip — GROQ_API_KEY tidak ditemukan di .env. "
+            "Daftar gratis di console.groq.com kalau mau pakai.[/dim]"
+        )
+
     console.print("\n[bold]Ringkasan:[/bold]")
-    console.print(f"  Model        : [cyan]{args.model}[/cyan]")
-    console.print(f"  Resolusi     : [cyan]{args.output_resolution}x{int(args.output_resolution * 16 / 9)}[/cyan]")
-    console.print(f"  Max clips    : [cyan]{args.max_clips or 'semua'}[/cyan]")
+    console.print(f"  Model         : [cyan]{args.model}[/cyan]")
+    console.print(f"  Resolusi      : [cyan]{args.output_resolution}x{int(args.output_resolution * 16 / 9)}[/cyan]")
+    console.print(f"  Max clips     : [cyan]{args.max_clips or 'semua'}[/cyan]")
+    console.print(f"  Smart crop    : [cyan]{'on' if args.smart_crop else 'off'}[/cyan]")
+    console.print(f"  Strategy      : [cyan]{args.strategy}[/cyan]")
+    console.print(f"  AI polish     : [cyan]{'on' if args.ai_polish else 'off'}[/cyan]")
+    console.print(f"  AI metadata   : [cyan]{'on' if args.ai_metadata else 'off'}[/cyan]")
     if args.initial_prompt:
         console.print(f"  Initial prompt: [cyan]{args.initial_prompt[:60]}{'...' if len(args.initial_prompt) > 60 else ''}[/cyan]")
     console.print(f"  Strategi     : {args.strategy} · target {args.target_duration}s · parallel {args.parallel}")
