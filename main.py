@@ -102,7 +102,11 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=["auto", "libx264", "h264_vaapi", "h264_nvenc", "h264_qsv"],
                    help="Override FFmpeg encoder (default: auto)")
     p.add_argument("--output-resolution", type=int, default=1080, choices=[720, 1080],
-                   help="Tinggi target clip viral: 720 (HD, ~2x lebih cepat) atau 1080 (FHD)")
+                   help="Kualitas target clip: 720 (HD, ~2x lebih cepat) atau 1080 (FHD)")
+    p.add_argument("--aspect", default="9:16",
+                   choices=["9:16", "1:1", "16:9"],
+                   help="Aspect ratio output: 9:16 (TikTok/Reels/Shorts, default), "
+                        "1:1 (Instagram feed), 16:9 (YouTube, desktop)")
     p.add_argument("--parallel", type=int, default=1,
                    help="Render N clip bersamaan (disarankan 2-3 untuk hw encoder)")
     p.add_argument("--max-clips", type=int, default=0,
@@ -405,9 +409,19 @@ def main() -> None:
             )
             clips_meta = clips_meta[: args.max_clips]
 
-        # 720 → 720x1280, 1080 → 1080x1920 (portrait 9:16)
-        tw = args.output_resolution
-        th = int(tw * 16 / 9)
+        # Resolution × aspect lookup
+        # 9:16 720→720x1280, 1080→1080x1920
+        # 1:1  720→720x720, 1080→1080x1080
+        # 16:9 720→1280x720, 1080→1920x1080
+        _res_table = {
+            ("9:16", 720):  (720, 1280),
+            ("9:16", 1080): (1080, 1920),
+            ("1:1", 720):   (720, 720),
+            ("1:1", 1080):  (1080, 1080),
+            ("16:9", 720):  (1280, 720),
+            ("16:9", 1080): (1920, 1080),
+        }
+        tw, th = _res_table[(args.aspect, args.output_resolution)]
 
         save_highlights(clips_meta, video.stem, transcript_dir)
         clip_paths = generate_clips(

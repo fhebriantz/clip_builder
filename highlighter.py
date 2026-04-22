@@ -452,26 +452,37 @@ def render_viral_clip(
     )
 
     enc = detect_ffmpeg_encoder()
-    # Smart crop: ikuti posisi wajah dengan smoothing anti-kaget.
-    if smart_crop:
-        from face_tracker import compute_smart_crop_x
-        console.print(f"  [dim]Smart crop: sampling wajah...[/dim]")
-        x_expr = compute_smart_crop_x(
-            video_path, start, end,
-            sample_interval=smart_crop_sample_interval,
-        )
-        # Named params (w=,h=,x=,y=) — positional parse error kalau expression
-        # x punya comma bersarang. Comma di expression di-escape \\,
-        crop_filter = f"crop=w=ih*9/16:h=ih:x={x_expr}:y=0"
-    else:
-        crop_filter = "crop=w=ih*9/16:h=ih:x=(iw-ih*9/16)/2:y=0"
+    # Crop filter berbeda per aspect target
+    target_ratio = target_width / target_height  # 9/16≈0.56, 1/1=1, 16/9≈1.78
 
-    vf = (
-        f"{crop_filter},"
-        f"scale={target_width}:{target_height},"
-        f"subtitles={srt_tmp.name}:force_style='{force_style}'"
-        f"{enc['filter_suffix']}"
-    )
+    if target_ratio > 1.5:
+        # Landscape 16:9 target → tidak perlu horizontal crop
+        # (source biasanya 16:9, langsung scale. Kalau 4:3, hasilnya letterbox.)
+        crop_filter = None
+    else:
+        # Portrait 9:16 atau Square 1:1 target → crop horizontal dari landscape source
+        # crop_w sebagai fraksi dari iw (aspect_w/aspect_h × ih/iw, tapi lebih mudah: ih*ratio)
+        if smart_crop:
+            from face_tracker import compute_smart_crop_x
+            console.print(f"  [dim]Smart crop: sampling wajah...[/dim]")
+            # Parse target aspect dari width/height
+            aw, ah = target_width, target_height
+            x_expr = compute_smart_crop_x(
+                video_path, start, end,
+                target_aspect_w=aw, target_aspect_h=ah,
+                sample_interval=smart_crop_sample_interval,
+            )
+            crop_filter = f"crop=w=ih*{aw}/{ah}:h=ih:x={x_expr}:y=0"
+        else:
+            crop_filter = f"crop=w=ih*{target_width}/{target_height}:h=ih:x=(iw-ih*{target_width}/{target_height})/2:y=0"
+
+    parts = []
+    if crop_filter:
+        parts.append(crop_filter)
+    parts.append(f"scale={target_width}:{target_height}")
+    parts.append(f"subtitles={srt_tmp.name}:force_style='{force_style}'")
+
+    vf = ",".join(parts) + enc["filter_suffix"]
 
     cmd = [
         "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
