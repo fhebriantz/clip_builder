@@ -151,6 +151,24 @@ def detect_face_positions(
     return positions
 
 
+def _median_filter(
+    positions: list[tuple[float, float]],
+    window: int = 3,
+) -> list[tuple[float, float]]:
+    """Median filter anti-spike: single-sample outlier ter-filter otomatis.
+    Contoh: [45, 63, 47] → median 47 (bukan 63). Introduces lag 1 sample.
+    """
+    if len(positions) <= 1 or window <= 1:
+        return list(positions)
+    result = [positions[0]]
+    for i in range(1, len(positions)):
+        start = max(0, i - window + 1)
+        vals = sorted(positions[j][1] for j in range(start, i + 1))
+        median = vals[len(vals) // 2]
+        result.append((positions[i][0], median))
+    return result
+
+
 def smooth_positions(
     positions: list[tuple[float, float]],
     alpha: float = 0.15,
@@ -231,10 +249,11 @@ def smooth_state_machine(
                     trans_target_x = x
                     new_x = current
             else:
-                # Micro-correction: kalau raw beda 2-6%, tarik pelan
+                # Micro-correction lebih konservatif: hanya pergerakan 4%+ yang di-track,
+                # dengan nudge sangat kecil (10% delta) — hampir tidak terlihat
                 delta = x - current
-                if abs(delta) >= trigger_threshold * 0.33:
-                    new_x = current + delta * 0.25
+                if abs(delta) >= trigger_threshold * 0.66:
+                    new_x = current + delta * 0.1
                 else:
                     new_x = current
         else:  # transitioning
@@ -362,8 +381,11 @@ def compute_smart_crop_x(
         max_x = 1.0 - crop_width_fraction
         return f"max(0\\,min({max_x}*iw\\,(0.5-{half_crop})*iw))"
 
+    # Median filter dulu — hilangkan spike single-sample dari false detection
+    filtered = _median_filter(raw, window=3)
+
     smoothed = smooth_state_machine(
-        raw,
+        filtered,
         trigger_threshold=trigger_threshold,
         transition_duration=transition_duration,
         transition_curve=transition_curve,
