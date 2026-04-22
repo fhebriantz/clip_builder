@@ -8,16 +8,24 @@ Gratis + lokal (tidak ada API berbayar). Opsional: Groq API free tier untuk fitu
 
 ## Perintah Cepat yang Sering Dipakai
 
-### 1. Mode Interaktif (paling direkomendasikan — tinggal tekan Enter)
+### 1. Web UI Gradio (paling ramah untuk non-CLI)
 
 ```bash
 source venv/bin/activate
+python app.py
+```
+
+Buka **http://127.0.0.1:7860** di browser. Semua fitur CLI tersedia sebagai form dengan hint per field. Preview video langsung di browser + download button.
+
+### 2. Mode Interaktif CLI (tinggal tekan Enter)
+
+```bash
 python main.py "https://youtu.be/VIDEO_ID"
 ```
 
 Akan tanya 1-per-1: model Whisper, resolusi, max clip, smart crop, AI features. Cukup tekan Enter untuk default.
 
-### 2. Full Viral Workflow (terminal one-liner)
+### 3. Full Viral Workflow (terminal one-liner)
 
 Workflow paling komplet — AI pilih clip terbaik, polish subtitle, smart crop, generate metadata:
 
@@ -34,7 +42,7 @@ python main.py "URL" -y \
 
 Output 3 clip viral siap upload + file `.meta.json` per clip (berisi 3 pilihan title, description, hashtag).
 
-### 3. Viral + Koreksi Typo Spesifik (paling akurat)
+### 4. Viral + Koreksi Typo Spesifik (paling akurat)
 
 Saat Whisper salah dengar kata tertentu (misal "serakah" → "straka"), kasih topik + manual fix:
 
@@ -51,7 +59,7 @@ python main.py "URL" -y \
 - `--polish-vocab`: kata-kata penting yang mungkin muncul (ejaan benar)
 - `--polish-fix`: manual override 100% reliable untuk typo yang Anda sudah tahu
 
-### 4. Multi-Platform (render 3 aspect sekaligus)
+### 5. Multi-Platform (render 3 aspect sekaligus)
 
 ```bash
 # TikTok/Reels/Shorts
@@ -64,13 +72,39 @@ python main.py "URL" -y --strategy ai --ai-metadata --smart-crop --aspect 1:1 --
 python main.py "URL" -y --strategy ai --ai-metadata --aspect 16:9 --max-clips 2
 ```
 
-### 5. Quick Preview (1 clip saja, model cepat)
+### 6. Quick Preview (1 clip saja, model cepat)
 
 ```bash
 python main.py "URL" -y --model tiny --max-clips 1 --strategy ai
 ```
 
 ~3-5 menit untuk preview hasil sebelum commit ke pipeline full.
+
+### 7. Batch Processing (daftar URL dari file .txt)
+
+```bash
+# Bikin file urls.txt (1 URL per baris, # = komentar)
+echo "https://youtu.be/VIDEO1
+https://youtu.be/VIDEO2
+# https://youtu.be/SKIP_INI" > my_urls.txt
+
+python main.py --batch my_urls.txt -y \
+  --strategy ai --ai-metadata --smart-crop --max-clips 3
+```
+
+Proses N video sequential. Error per URL tidak abort batch — lanjut ke URL berikutnya.
+
+### 8. Translation Multi-Bahasa
+
+```bash
+# Render clip dengan subtitle English
+python main.py "URL" --ai-translate en --strategy ai --ai-metadata --smart-crop
+
+# Japanese, Spanish, Chinese — 50+ bahasa supported
+python main.py "URL" --ai-translate ja
+python main.py "URL" --ai-translate es
+python main.py "URL" --ai-translate "Mandarin"
+```
 
 ---
 
@@ -80,22 +114,28 @@ python main.py "URL" -y --model tiny --max-clips 1 --strategy ai
 - **Download fleksibel** — single video atau N video terbaru dari channel (yt-dlp)
 - **Support YouTube Shorts** — auto-detect URL Shorts
 - **Filter keyword judul** — hanya download video yang judulnya match
+- **Batch processing** — input file .txt berisi daftar URL, proses sequential
 - **Auto-detect bahasa** — Faster-Whisper (Indonesia, Inggris, dll)
 - **Transkripsi akurat** — timestamp per-kalimat + word-level, export JSON + SRT
+- **Cache transcript** — skip Whisper kalau parameter sama (10x speedup untuk eksperimen)
 - **Density-based clipping** — potong 60 detik berbasis kepadatan bicara
 - **Multi-aspect output** — 9:16 (TikTok/Reels), 1:1 (Instagram feed), 16:9 (YouTube/desktop)
 - **Subtitle burn-in viral style** — bold, kuning/putih, outline hitam, lower-third
 - **Smart subtitle chunking** — 4-6 kata per chunk, break di titik/koma/pause natural
-- **Face tracking smart crop** — active speaker detection (frontal priority) + state machine smoothing (diam saat listening, snap saat scene cut)
+- **Face tracking smart crop** — active speaker detection (frontal priority) + state machine smoothing
 - **Hardware acceleration** — auto NVENC > VAAPI > QSV > libx264
 - **Parallel rendering** — render N clip bersamaan
 - **Mode interaktif** — prompt y/n untuk setiap fitur, auto-detect Groq
+- **Web UI (Gradio)** — akses semua fitur via browser dengan hint per field
 
 ### AI Features (butuh GROQ_API_KEY — gratis di console.groq.com)
 - **AI Smart Highlight** — LLM baca transkrip penuh, pilih momen paling viral-worthy (skip intro/filler)
 - **AI Subtitle Polish** — fix typo Whisper, hapus filler ("umm", "eh"), konsistensi kapital
-- **Context-aware polish** — kasih topic hint + vocabulary + manual correction dict untuk akurasi maksimal
+- **Context-aware polish** — topic hint + vocabulary + manual correction dict untuk akurasi maksimal
+- **AI Hook Moment Detection** — identify 3-5 detik puncak dari tiap clip (timestamp + text + alasan)
+- **Render Hook Teaser** — bikin file teaser 3-5 detik terpisah untuk ultra-short content
 - **AI Metadata** — generate 3 opsi title viral + description + 8 hashtag per clip
+- **Translation 50+ bahasa** — translate subtitle ke bahasa target (en, ja, es, zh, fr, ar, dll), burn-in ke video
 
 ### Graceful Fallback
 Kalau `GROQ_API_KEY` tidak ada, semua fitur AI otomatis ter-skip. Pipeline utama jalan 100% dengan density strategy tanpa error.
@@ -343,12 +383,64 @@ python main.py "https://youtu.be/XXXX" --no-viral
 
 ---
 
+## Web UI (Gradio)
+
+Alternatif jalan dari browser — semua fitur CLI tersedia dengan hint per field.
+
+```bash
+source venv/bin/activate
+python app.py
+# Buka http://127.0.0.1:7860
+```
+
+### Fitur Web UI
+- **Input panel**: URL YouTube atau upload file batch `.txt`
+- **Accordions logis**: Subtitle Style, Face Tracking, Clipping Strategy, AI Features, Advanced
+- **Hint per field**: dampak speed (+30s, ~instant), contoh isian, kapan dipakai
+- **Auto-detect Groq**: fitur AI toggle otomatis aktif kalau `.env` punya `GROQ_API_KEY`
+- **Output tabs**:
+  - 🎬 Preview — video player clip pertama + metadata markdown (title/description/hashtag/hook)
+  - 📁 Semua File — download list clips + hook teasers
+  - 📊 Metadata JSON — raw JSON per clip
+
+### Tip Pakai Web UI
+- First time: default setting, klik **Generate Clips** → tunggu
+- Preview cepat: centang **max clips = 1** di atas
+- Eksperimen: buka accordion **Advanced** untuk tune parallel, language, encoder
+- Batch: upload `.txt` berisi daftar URL, field URL di atas diabaikan otomatis
+
+---
+
+## Perbandingan vs Kompetitor
+
+| Fitur | Ssemble ($6-24/mo) | **clip_builder (gratis)** |
+|---|---|---|
+| AI Auto-clipping | ✓ | ✓ |
+| Auto-transcription | ✓ | ✓ + cache |
+| Subtitle burn-in | ✓ | ✓ smart chunking 4-6 kata |
+| Face tracking | ✓ | ✓ state machine anti-kaget |
+| AI Title/Description/Hashtag | ✓ | ✓ |
+| Multi-aspect output | ✓ | ✓ (9:16/1:1/16:9) |
+| Translation multi-bahasa | ✓ 30+ | ✓ 50+ (Llama 3.3) |
+| Batch processing | ✓ | ✓ |
+| Web UI | ✓ | ✓ (Gradio) |
+| **Subtitle Polish** | ❌ | ✅ **UNIQUE** |
+| **Hook Moment Detection** | ❌ | ✅ **UNIQUE** |
+| **Context-aware typo fix** | ❌ | ✅ **UNIQUE** (3-tier) |
+| **Cache transcripts** | ❌ | ✅ **UNIQUE** (10x speedup) |
+| Social media auto-post | ✓ | ❌ (out of scope) |
+| **Privacy** | Cloud upload | **100% lokal** |
+| **Harga per tahun** | $72-288 | **$0** |
+
+---
+
 ## CLI Options Lengkap
 
 ### Input
 | Flag | Default | Deskripsi |
 |---|---|---|
-| `url` | — | Link video YouTube tunggal atau channel |
+| `url` | — | Link video YouTube (opsional kalau pakai `--batch`) |
+| `--batch` | — | Path ke file `.txt` berisi daftar URL (1 per baris, `#` = komentar) |
 | `-k`, `--keyword` | `""` | Filter judul video (kosong = ambil semua) |
 | `-n`, `--limit` | `3` | Jumlah video terbaru dari channel |
 
@@ -359,6 +451,7 @@ python main.py "https://youtu.be/XXXX" --no-viral
 | `--language` | `auto` | `auto` (deteksi otomatis), `id`, `en`, dll |
 | `--initial-prompt` | — | Kata kunci konteks untuk boost akurasi vocab (contoh: `"mindset, bisnis, koneksi"`) |
 | `--no-transcribe` | — | Skip transkripsi dan clipping |
+| `--no-cache` | — | Paksa re-transcribe, abaikan cache di `transcripts/` |
 
 ### Strategi Clipping
 | Flag | Default | Deskripsi |
@@ -392,6 +485,11 @@ python main.py "https://youtu.be/XXXX" --no-viral
 | `--ai-polish` | off | Polish subtitle: fix typo + hapus filler + konsistensi kapital |
 | `--polish-topic` | — | Deskripsi topik video untuk disambiguasi typo (contoh: `"mindset bisnis serakah"`) |
 | `--polish-vocab` | — | Kata-kata penting dipisah koma (contoh: `"serakah,koneksi,milenial"`) |
+| `--polish-fix` | — | Manual correction `salah=benar,salah2=benar2` (100% reliable) |
+| `--ai-metadata` | off | Generate 3 title + description + 8 hashtag per clip |
+| `--ai-hook` | off | Detect 3-5 detik hook moment per clip (simpan di `.meta.json`) |
+| `--render-hook` | off | Render file teaser mp4 3-5 detik terpisah (implies `--ai-hook`) |
+| `--ai-translate` | — | Translate subtitle ke bahasa target dan burn-in. Contoh: `en`, `ja`, `es`, `zh`, `fr`, `"Mandarin"`, `"Arabic"` (50+ bahasa) |
 | `--polish-fix` | — | Manual correction `salah=benar,salah2=benar2` (100% reliable) |
 | `--ai-metadata` | off | Generate title (3 opsi) + description + hashtag per clip |
 
@@ -433,17 +531,40 @@ Detail tuning tersedia di `test_facetrack.py` (script standalone untuk eksperime
 ```
 clip_builder/
 ├── downloads/
-│   └── <video_id>.mp4              video mentah dari YouTube
+│   └── <video_id>.mp4                    video mentah dari YouTube
 ├── audio/
-│   └── <video_id>.wav              audio 16kHz mono untuk Whisper
+│   └── <video_id>.wav                    audio 16kHz mono untuk Whisper
 ├── transcripts/
-│   ├── <video_id>.json             transkrip lengkap
-│   ├── <video_id>.srt              subtitle full video
-│   └── <video_id>_highlights.json  metadata clip
+│   ├── <video_id>.json                   transkrip lengkap (dengan _cache_meta)
+│   ├── <video_id>.srt                    subtitle full video
+│   └── <video_id>_highlights.json        metadata clip
 └── Output_Clips/
-    ├── <video_id>_clip_01.mp4      1080x1920 atau 720x1280
-    ├── <video_id>_clip_02.mp4      subtitle ter-burn di tengah
-    └── <video_id>_clip_NN.mp4
+    ├── <video_id>_clip_01.mp4            main clip viral (portrait/square/landscape)
+    ├── <video_id>_clip_01_hook.mp4       hook teaser 3-5 detik (kalau --render-hook)
+    ├── <video_id>_clip_01.meta.json      {titles, description, hashtags, hook}
+    └── <video_id>_clip_NN.mp4            ...
+```
+
+### Isi `.meta.json` per Clip
+
+```json
+{
+  "titles": [
+    "Rahasia Orang Kaya yang Jarang Dibahas",
+    "99% Orang Salah Mengerti Ini",
+    "Mindset yang Bikin Gue Sukses"
+  ],
+  "description": "Ganti mindset, ubah hidupmu! Save buat nanti",
+  "hashtags": ["#MindsetKaya", "#BisnisOnline", "#fyp", "#viral", ...],
+  "hook": {
+    "hook_start": 2.5,
+    "hook_end": 5.1,
+    "hook_duration": 2.6,
+    "text": "Kalimat punch yang jadi hook terkuat",
+    "reason": "Kontroversial + call-out common mistake",
+    "strength": 9.5
+  }
+}
 ```
 
 ---
@@ -546,13 +667,14 @@ python main.py "URL" --model tiny --output-resolution 720 --parallel 2 --max-cli
 clip_builder/
 ├── accel.py              auto-detect hardware (GPU, encoder, thread)
 ├── downloader.py         URL → video mp4 + audio wav
-├── transcriber.py        Faster-Whisper wrapper → JSON + SRT
+├── transcriber.py        Faster-Whisper wrapper → JSON + SRT + cache
 ├── highlighter.py        density/highlight detector + renderer (cut, crop, subtitle)
 ├── face_tracker.py       face detection + state machine smoothing untuk smart-crop
-├── ai_metadata.py        Groq LLM: smart highlight + polish + title/desc/hashtag
-├── test_facetrack.py     script standalone untuk eksperimen face tracking cepat
+├── ai_metadata.py        Groq LLM: smart highlight + polish + metadata + hook + translate
 ├── main.py               CLI entry point (orchestrator)
-├── local_videos/         (opsional) folder video lokal untuk testing
+├── app.py                Web UI (Gradio) — akses semua fitur via browser
+├── test_facetrack.py     script standalone untuk eksperimen face tracking cepat
+├── local_videos/         (opsional) folder video lokal + batch .txt
 ├── .env                  (tidak ter-commit) GROQ_API_KEY disimpan di sini
 ├── requirements.txt
 ├── README.md
@@ -566,7 +688,9 @@ clip_builder/
 - **`transcriber.py`** — load Faster-Whisper model (cache in-memory), transcribe dengan VAD filter, export JSON/SRT.
 - **`highlighter.py`** — dua strategi clipping: `group_by_density()` untuk pembagian 60s berbasis kepadatan, `pick_highlights()` untuk keyword-based. Plus `render_viral_clip()` dan `cut_clip()`.
 - **`face_tracker.py`** — deteksi wajah multi-cascade (frontal + profile), strategi `active_speaker`, state machine smoothing (stable ↔ transitioning), FFmpeg crop x-expression builder.
-- **`ai_metadata.py`** — Groq LLM integration: `generate_smart_highlights()` untuk pilih clip viral-worthy, `polish_subtitles()` untuk fix typo & filler, `generate_metadata()` untuk title/description/hashtag.
+- **`ai_metadata.py`** — Groq LLM integration: `generate_smart_highlights()` untuk pilih clip viral-worthy, `polish_subtitles()` untuk fix typo & filler, `detect_hook_moment()` untuk identify puncak clip, `generate_metadata()` untuk title/description/hashtag, `translate_subtitles()` untuk multi-bahasa.
+- **`main.py`** — CLI orchestrator lengkap dengan mode interaktif + batch support.
+- **`app.py`** — Web UI (Gradio) — wrapper GUI di atas main.py untuk user non-CLI.
 - **`test_facetrack.py`** — CLI terpisah untuk test cepat parameter face tracking tanpa jalan pipeline lengkap.
 - **`main.py`** — argparse, orchestrate seluruh pipeline, tampilkan progress.
 
