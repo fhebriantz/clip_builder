@@ -1,26 +1,104 @@
 # AI Video Clipper
 
-Aplikasi Python lokal untuk mengubah video panjang dari YouTube menjadi klip pendek siap-upload ke TikTok, Instagram Reels, dan YouTube Shorts — lengkap dengan transkripsi otomatis dan subtitle burn-in ala konten viral.
+Aplikasi Python lokal untuk mengubah video panjang dari YouTube menjadi klip pendek viral siap-upload ke TikTok, Instagram Reels, dan YouTube Shorts — lengkap dengan transkripsi otomatis, face tracking, subtitle burn-in, dan AI metadata (title/description/hashtag).
 
-Gratis, lokal, tanpa API berbayar. Auto-detect hardware (CPU/NVIDIA CUDA/Intel-AMD VAAPI) untuk performa maksimal di mesin manapun.
+Gratis + lokal (tidak ada API berbayar). Opsional: Groq API free tier untuk fitur AI advanced.
+
+---
+
+## Perintah Cepat yang Sering Dipakai
+
+### 1. Mode Interaktif (paling direkomendasikan — tinggal tekan Enter)
+
+```bash
+source venv/bin/activate
+python main.py "https://youtu.be/VIDEO_ID"
+```
+
+Akan tanya 1-per-1: model Whisper, resolusi, max clip, smart crop, AI features. Cukup tekan Enter untuk default.
+
+### 2. Full Viral Workflow (terminal one-liner)
+
+Workflow paling komplet — AI pilih clip terbaik, polish subtitle, smart crop, generate metadata:
+
+```bash
+python main.py "URL" -y \
+  --strategy ai \
+  --ai-polish \
+  --ai-metadata \
+  --smart-crop \
+  --max-clips 3 \
+  --aspect 9:16 \
+  --subtitle-color yellow
+```
+
+Output 3 clip viral siap upload + file `.meta.json` per clip (berisi 3 pilihan title, description, hashtag).
+
+### 3. Viral + Koreksi Typo Spesifik (paling akurat)
+
+Saat Whisper salah dengar kata tertentu (misal "serakah" → "straka"), kasih topik + manual fix:
+
+```bash
+python main.py "URL" -y \
+  --strategy ai --ai-polish --ai-metadata --smart-crop \
+  --polish-topic "Video mindset bisnis membahas orang serakah dan sukses" \
+  --polish-vocab "serakah,rakus,koneksi,milenial,mindset" \
+  --polish-fix "straka=serakah,conesi=koneksi" \
+  --max-clips 3
+```
+
+- `--polish-topic`: kasih LLM konteks topik video
+- `--polish-vocab`: kata-kata penting yang mungkin muncul (ejaan benar)
+- `--polish-fix`: manual override 100% reliable untuk typo yang Anda sudah tahu
+
+### 4. Multi-Platform (render 3 aspect sekaligus)
+
+```bash
+# TikTok/Reels/Shorts
+python main.py "URL" -y --strategy ai --ai-metadata --smart-crop --aspect 9:16 --max-clips 2
+
+# Instagram feed
+python main.py "URL" -y --strategy ai --ai-metadata --smart-crop --aspect 1:1 --max-clips 2
+
+# YouTube clip / desktop
+python main.py "URL" -y --strategy ai --ai-metadata --aspect 16:9 --max-clips 2
+```
+
+### 5. Quick Preview (1 clip saja, model cepat)
+
+```bash
+python main.py "URL" -y --model tiny --max-clips 1 --strategy ai
+```
+
+~3-5 menit untuk preview hasil sebelum commit ke pipeline full.
 
 ---
 
 ## Fitur Utama
 
-- **Download fleksibel** — single video atau 3 video terbaru dari channel (yt-dlp)
+### Core (tidak butuh API)
+- **Download fleksibel** — single video atau N video terbaru dari channel (yt-dlp)
+- **Support YouTube Shorts** — auto-detect URL Shorts
 - **Filter keyword judul** — hanya download video yang judulnya match
-- **Auto-detect bahasa** — Faster-Whisper otomatis deteksi bahasa (Indonesia, Inggris, dll)
-- **Transkripsi akurat** — timestamp per-kalimat, export JSON + SRT
-- **Density-based clipping** — potong jadi clip ~60 detik berdasarkan kepadatan bicara (bukan asal potong)
-- **Highlight detection** — opsi alternatif berdasarkan keyword/hook phrase viral
-- **9:16 center crop** — otomatis portrait 720p atau 1080p
-- **Subtitle burn-in viral style** — bold, kuning/putih, border hitam tebal, di tengah layar
-- **Smart subtitle chunking** — subtitle dipecah jadi chunks 4-6 kata dengan prioritas break di titik/koma/pause natural (ala TikTok/Reels), auto-merge orphan
-- **Face tracking crop** (opt-in) — auto-follow speaker dengan active_speaker detection (frontal+profile Haar), state machine smoothing (diam saat listening, snap instant saat scene cut). Cocok untuk podcast/interview multi-person
-- **Hardware acceleration** — auto-pilih NVENC > VAAPI > QSV > libx264
-- **Parallel rendering** — render N clip bersamaan di hardware encoder
-- **Cross-platform** — satu perintah yang sama di Linux, Windows, macOS
+- **Auto-detect bahasa** — Faster-Whisper (Indonesia, Inggris, dll)
+- **Transkripsi akurat** — timestamp per-kalimat + word-level, export JSON + SRT
+- **Density-based clipping** — potong 60 detik berbasis kepadatan bicara
+- **Multi-aspect output** — 9:16 (TikTok/Reels), 1:1 (Instagram feed), 16:9 (YouTube/desktop)
+- **Subtitle burn-in viral style** — bold, kuning/putih, outline hitam, lower-third
+- **Smart subtitle chunking** — 4-6 kata per chunk, break di titik/koma/pause natural
+- **Face tracking smart crop** — active speaker detection (frontal priority) + state machine smoothing (diam saat listening, snap saat scene cut)
+- **Hardware acceleration** — auto NVENC > VAAPI > QSV > libx264
+- **Parallel rendering** — render N clip bersamaan
+- **Mode interaktif** — prompt y/n untuk setiap fitur, auto-detect Groq
+
+### AI Features (butuh GROQ_API_KEY — gratis di console.groq.com)
+- **AI Smart Highlight** — LLM baca transkrip penuh, pilih momen paling viral-worthy (skip intro/filler)
+- **AI Subtitle Polish** — fix typo Whisper, hapus filler ("umm", "eh"), konsistensi kapital
+- **Context-aware polish** — kasih topic hint + vocabulary + manual correction dict untuk akurasi maksimal
+- **AI Metadata** — generate 3 opsi title viral + description + 8 hashtag per clip
+
+### Graceful Fallback
+Kalau `GROQ_API_KEY` tidak ada, semua fitur AI otomatis ter-skip. Pipeline utama jalan 100% dengan density strategy tanpa error.
 
 ---
 
@@ -33,16 +111,27 @@ URL YouTube
 [downloader]    yt-dlp + ffmpeg ──► video.mp4 + audio.wav (16kHz mono)
     │
     ▼
-[transcriber]   Faster-Whisper ───► segments[{start, end, text}] + bahasa
+[transcriber]   Faster-Whisper ───► segments + word-level timestamps
     │                                (auto-detect bahasa)
     ▼
-[highlighter]   density | highlight ► clips_meta[{start, end, duration}]
-    │                                 (berbasis kepadatan bicara)
+[ai_metadata]   Groq LLM ─────────► polish subtitle (opt-in)
+    │                                fix typo, hapus filler
+    ▼
+[highlighter]   density | ai ───────► clips_meta
+    │           LLM pilih viral        [{start, end, reason, viral_score}]
+    │           moment (opt-in)
+    ▼
+[face_tracker]  OpenCV + state ────► dynamic crop x-expression
+    │           machine smoothing     (opt-in via --smart-crop)
     ▼
 [render]        FFmpeg ────────────► Output_Clips/*.mp4
-                • cut akurat           (1080x1920 atau 720x1280
-                • 9:16 center crop      + subtitle kuning/putih
-                • burn-in subtitle        bold outline hitam, center)
+                • cut + crop             (9:16 / 1:1 / 16:9)
+                • smart crop (face)      + subtitle kuning/putih bold
+                • burn-in subtitle         outline hitam lower-third
+    │
+    ▼
+[ai_metadata]   Groq LLM ─────────► *.meta.json per clip
+                (opt-in)             {titles, description, hashtags}
 ```
 
 ---
@@ -122,6 +211,19 @@ pip install torch torchaudio
 | NVIDIA GPU (Pascal sampai Ada) | `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118` |
 | NVIDIA GPU terbaru (Hopper+) | `pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121` |
 | Apple Silicon (M1/M2/M3) | `pip install torch torchaudio` (default pakai MPS) |
+
+### Setup Groq API (Opsional — untuk fitur AI)
+
+Fitur AI (smart highlight, polish, metadata) butuh Groq API key. **Gratis**, tidak perlu kartu kredit.
+
+```bash
+# 1. Daftar di https://console.groq.com (Google/GitHub login)
+# 2. Buat API key di menu 'API Keys'
+# 3. Simpan ke .env
+echo 'GROQ_API_KEY=gsk_xxxxxxxxxxxxx' >> .env
+```
+
+Free tier: 14,400 request/hari (= ratusan video per hari). Tanpa key, fitur AI otomatis ter-skip, pipeline utama tetap jalan.
 
 ---
 
@@ -261,8 +363,8 @@ python main.py "https://youtu.be/XXXX" --no-viral
 ### Strategi Clipping
 | Flag | Default | Deskripsi |
 |---|---|---|
-| `--strategy` | `density` | `density`, `highlight`, `both` |
-| `--target-duration` | `60` | Target durasi clip density (detik) |
+| `--strategy` | `density` | `density`, `highlight`, `both`, **`ai`** (LLM pilih viral-worthy) |
+| `--target-duration` | `60` | Target durasi clip (detik) |
 | `--silence-threshold` | `2.0` | Gap bicara yang dianggap batas clip |
 | `--min-clip-duration` | `20` | Buang clip lebih pendek dari ini |
 | `--highlight-keywords` | `""` | Keyword highlight dipisah koma |
@@ -273,14 +375,25 @@ python main.py "https://youtu.be/XXXX" --no-viral
 ### Viral Rendering
 | Flag | Default | Deskripsi |
 |---|---|---|
-| `--no-viral` | — | Skip 9:16 + subtitle, raw cut saja (instant) |
+| `--aspect` | `9:16` | `9:16` (TikTok/Reels), `1:1` (Instagram feed), `16:9` (YouTube) |
+| `--output-resolution` | `1080` | `720` (HD) atau `1080` (FHD) |
+| `--no-viral` | — | Skip crop + subtitle, raw cut saja (instant) |
 | `--subtitle-color` | `yellow` | `yellow` atau `white` |
 | `--font` | auto | Nama font — default per platform |
 | `--font-size` | `14` | Ukuran font subtitle |
 | `--subtitle-min-words` | `4` | Minimal kata per chunk subtitle |
 | `--subtitle-max-words` | `6` | Maksimal kata per chunk subtitle (gaya viral TikTok/Reels) |
 | `--subtitle-margin-top` | `0.75` | Posisi subtitle sebagai fraksi dari atas (0.75 = 75% dari atas = lower-third) |
-| `--output-resolution` | `1080` | `720` atau `1080` (tinggi 9:16) |
+
+### AI Features (butuh GROQ_API_KEY)
+| Flag | Default | Deskripsi |
+|---|---|---|
+| `--strategy ai` | off | LLM pilih clip viral-worthy dari transkrip penuh (ganti density/highlight) |
+| `--ai-polish` | off | Polish subtitle: fix typo + hapus filler + konsistensi kapital |
+| `--polish-topic` | — | Deskripsi topik video untuk disambiguasi typo (contoh: `"mindset bisnis serakah"`) |
+| `--polish-vocab` | — | Kata-kata penting dipisah koma (contoh: `"serakah,koneksi,milenial"`) |
+| `--polish-fix` | — | Manual correction `salah=benar,salah2=benar2` (100% reliable) |
+| `--ai-metadata` | off | Generate title (3 opsi) + description + hashtag per clip |
 
 ### Face Tracking (opt-in)
 | Flag | Default | Deskripsi |
@@ -436,9 +549,11 @@ clip_builder/
 ├── transcriber.py        Faster-Whisper wrapper → JSON + SRT
 ├── highlighter.py        density/highlight detector + renderer (cut, crop, subtitle)
 ├── face_tracker.py       face detection + state machine smoothing untuk smart-crop
+├── ai_metadata.py        Groq LLM: smart highlight + polish + title/desc/hashtag
 ├── test_facetrack.py     script standalone untuk eksperimen face tracking cepat
 ├── main.py               CLI entry point (orchestrator)
 ├── local_videos/         (opsional) folder video lokal untuk testing
+├── .env                  (tidak ter-commit) GROQ_API_KEY disimpan di sini
 ├── requirements.txt
 ├── README.md
 └── .gitignore
@@ -451,6 +566,7 @@ clip_builder/
 - **`transcriber.py`** — load Faster-Whisper model (cache in-memory), transcribe dengan VAD filter, export JSON/SRT.
 - **`highlighter.py`** — dua strategi clipping: `group_by_density()` untuk pembagian 60s berbasis kepadatan, `pick_highlights()` untuk keyword-based. Plus `render_viral_clip()` dan `cut_clip()`.
 - **`face_tracker.py`** — deteksi wajah multi-cascade (frontal + profile), strategi `active_speaker`, state machine smoothing (stable ↔ transitioning), FFmpeg crop x-expression builder.
+- **`ai_metadata.py`** — Groq LLM integration: `generate_smart_highlights()` untuk pilih clip viral-worthy, `polish_subtitles()` untuk fix typo & filler, `generate_metadata()` untuk title/description/hashtag.
 - **`test_facetrack.py`** — CLI terpisah untuk test cepat parameter face tracking tanpa jalan pipeline lengkap.
 - **`main.py`** — argparse, orchestrate seluruh pipeline, tampilkan progress.
 
@@ -510,6 +626,8 @@ Model disimpan di `~/.cache/huggingface/hub`. Download pertama sekitar 465 MB un
 - **[yt-dlp](https://github.com/yt-dlp/yt-dlp)** — downloader YouTube/TikTok/Instagram
 - **[Faster-Whisper](https://github.com/SYSTRAN/faster-whisper)** — Whisper dengan backend CTranslate2 (4x lebih cepat dari OpenAI Whisper, support int8 quantization)
 - **[FFmpeg](https://ffmpeg.org/)** — video/audio processing, hardware acceleration, subtitle burn-in via libass
+- **[OpenCV](https://opencv.org/)** — face detection (Haar Cascade frontal + profile)
+- **[Groq](https://groq.com/)** — LLM inference ultra-fast (Llama 3.3 70B) untuk AI features
 - **[PyTorch](https://pytorch.org/)** — backend untuk Whisper (CPU/CUDA/MPS)
 - **[Rich](https://github.com/Textualize/rich)** — terminal formatting
 
