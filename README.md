@@ -10,6 +10,9 @@ Gratis + lokal (tidak ada API berbayar). Opsional: Groq API free tier untuk fitu
 
 ### 1. Web UI Gradio (paling ramah untuk non-CLI)
 
+**Windows — double-click `run_windows.bat`** (auto-setup + auto-buka browser)
+
+Linux/macOS:
 ```bash
 source venv/bin/activate
 python app.py
@@ -204,7 +207,26 @@ pip install -r requirements.txt
 pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 ```
 
-### 2. Windows (dengan GPU NVIDIA)
+### 2. Windows (dengan GPU NVIDIA) — Opsi A: Auto-Setup (RECOMMENDED)
+
+Klik 2x file `run_windows.bat` di folder project. Script akan:
+1. Cek Python & FFmpeg (kasih error kalau belum install)
+2. Bikin venv + install semua dependencies (pertama kali saja, ~3-5 menit)
+3. Auto-deteksi GPU NVIDIA → install torch CUDA 11.8 + cuBLAS/cuDNN
+4. Jalankan Web UI di http://127.0.0.1:7860 + buka browser otomatis
+
+Run kedua dan seterusnya: tinggal klik 2x file `.bat` yang sama → langsung buka Web UI (skip setup, karena marker `venv\.installed` sudah ada).
+
+**Prasyarat (sekali install):**
+```powershell
+# Python 3.10+ dari https://www.python.org (centang "Add to PATH" saat install)
+# FFmpeg:
+winget install Gyan.FFmpeg
+```
+
+Setelah itu double-click `run_windows.bat`. Selesai.
+
+### 2b. Windows — Opsi B: Manual Setup
 
 ```powershell
 # FFmpeg
@@ -673,6 +695,7 @@ clip_builder/
 ├── ai_metadata.py        Groq LLM: smart highlight + polish + metadata + hook + translate
 ├── main.py               CLI entry point (orchestrator)
 ├── app.py                Web UI (Gradio) — akses semua fitur via browser
+├── run_windows.bat       Launcher Windows: double-click untuk setup + run
 ├── test_facetrack.py     script standalone untuk eksperimen face tracking cepat
 ├── local_videos/         (opsional) folder video lokal + batch .txt
 ├── .env                  (tidak ter-commit) GROQ_API_KEY disimpan di sini
