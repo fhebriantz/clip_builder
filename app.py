@@ -96,6 +96,7 @@ def run_pipeline(
     polish_topic,
     polish_vocab,
     polish_fix,
+    use_translate,
     translate_to,
     # Advanced
     language,
@@ -172,7 +173,8 @@ def run_pipeline(
             cmd += ["--polish-vocab", polish_vocab.strip()]
         if polish_fix and polish_fix.strip():
             cmd += ["--polish-fix", polish_fix.strip()]
-    if translate_to and translate_to.strip():
+    # Translate hanya aktif kalau checkbox tercentang DAN field bahasa diisi
+    if use_translate and translate_to and translate_to.strip():
         cmd += ["--ai-translate", translate_to.strip()]
 
     progress(0.02, desc="Memulai pipeline...")
@@ -463,10 +465,16 @@ def build_app():
                         info="Replace 'salah=benar' dipisah koma. 100% override — pasti di-apply",
                     )
 
+                    use_translate = gr.Checkbox(
+                        label="Translate Subtitle ke Bahasa Lain",
+                        value=False,
+                        info="+10-30s & ~4k token. Subtitle di-burn dalam bahasa target. Hemat token: biarkan OFF kalau tidak butuh",
+                    )
                     translate_to = gr.Textbox(
-                        label="Translate Subtitle Ke Bahasa",
+                        label="→ Bahasa Target",
                         placeholder="en / ja / es / zh / fr / Japanese / Arabic...",
-                        info="+10-30s. Subtitle di-burn ke video dalam bahasa target. 50+ bahasa supported",
+                        info="ISO code (en, ja, es) atau nama ('Japanese'). 50+ bahasa supported via Llama 3.3",
+                        interactive=True,
                     )
 
                 # — Advanced —
@@ -554,7 +562,7 @@ def build_app():
                 min_clip_duration, highlight_keywords, min_score,
                 use_metadata, use_hook, render_hook,
                 use_polish, polish_topic, polish_vocab, polish_fix,
-                translate_to,
+                use_translate, translate_to,
                 language, initial_prompt, parallel, encoder,
                 no_cache, no_viral,
             ],
@@ -574,6 +582,7 @@ def build_app():
                 False,       # use_hook
                 False,       # render_hook
                 False,       # use_polish
+                False,       # use_translate
                 "density",   # strategy
                 "",          # translate_to
                 "",          # polish_topic
@@ -584,7 +593,7 @@ def build_app():
         disable_ai_btn.click(
             fn=_disable_all_ai,
             outputs=[
-                use_metadata, use_hook, render_hook, use_polish,
+                use_metadata, use_hook, render_hook, use_polish, use_translate,
                 strategy, translate_to,
                 polish_topic, polish_vocab, polish_fix,
             ],
