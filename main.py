@@ -74,6 +74,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Ukuran font subtitle (default: 14)")
     p.add_argument("--subtitle-margin-top", type=float, default=0.75,
                    help="Posisi subtitle sebagai fraksi dari atas (default: 0.75 = 75%% dari atas)")
+    p.add_argument("--smart-crop", action="store_true",
+                   help="Face tracking dynamic crop (anti-kaget via EMA + dead-zone)")
     p.add_argument("--font", default=None,
                    help="Nama font subtitle (default: auto per platform — "
                         "DejaVu Sans di Linux, Arial di Windows, Helvetica di macOS)")
@@ -296,6 +298,7 @@ def main() -> None:
             subtitle_min_words=args.subtitle_min_words,
             subtitle_max_words=args.subtitle_max_words,
             subtitle_margin_bottom_pct=1.0 - args.subtitle_margin_top,
+            smart_crop=args.smart_crop,
         )
         r["clips"] = [str(p) for p in clip_paths]
 

@@ -405,6 +405,8 @@ def render_viral_clip(
     subtitle_min_words: int = 4,
     subtitle_max_words: int = 6,
     subtitle_margin_bottom_pct: float = 0.25,
+    smart_crop: bool = False,
+    smart_crop_sample_interval: float = 1.0,
 ) -> Path:
     """Cut + vertical 9:16 center crop + burn-in subtitle (bold, kuning/putih, outline hitam).
 
@@ -450,9 +452,22 @@ def render_viral_clip(
     )
 
     enc = detect_ffmpeg_encoder()
-    # Filter chain: center-crop 9:16 → scale → burn subtitle (software) → hwupload (kalau perlu)
+    # Smart crop: ikuti posisi wajah dengan smoothing anti-kaget.
+    if smart_crop:
+        from face_tracker import compute_smart_crop_x
+        console.print(f"  [dim]Smart crop: sampling wajah...[/dim]")
+        x_expr = compute_smart_crop_x(
+            video_path, start, end,
+            sample_interval=smart_crop_sample_interval,
+        )
+        # Named params (w=,h=,x=,y=) — positional parse error kalau expression
+        # x punya comma bersarang. Comma di expression di-escape \\,
+        crop_filter = f"crop=w=ih*9/16:h=ih:x={x_expr}:y=0"
+    else:
+        crop_filter = "crop=w=ih*9/16:h=ih:x=(iw-ih*9/16)/2:y=0"
+
     vf = (
-        f"crop=ih*9/16:ih:(iw-ih*9/16)/2:0,"
+        f"{crop_filter},"
         f"scale={target_width}:{target_height},"
         f"subtitles={srt_tmp.name}:force_style='{force_style}'"
         f"{enc['filter_suffix']}"
@@ -495,6 +510,7 @@ def generate_clips(
     subtitle_min_words: int = 4,
     subtitle_max_words: int = 6,
     subtitle_margin_bottom_pct: float = 0.25,
+    smart_crop: bool = False,
 ) -> list[Path]:
     """Render semua potongan.
 
@@ -522,6 +538,7 @@ def generate_clips(
                 subtitle_min_words=subtitle_min_words,
                 subtitle_max_words=subtitle_max_words,
                 subtitle_margin_bottom_pct=subtitle_margin_bottom_pct,
+                smart_crop=smart_crop,
             )
         else:
             cut_clip(video_path, h["start"], h["end"], out)

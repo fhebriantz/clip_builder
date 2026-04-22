@@ -17,6 +17,7 @@ Gratis, lokal, tanpa API berbayar. Auto-detect hardware (CPU/NVIDIA CUDA/Intel-A
 - **9:16 center crop** — otomatis portrait 720p atau 1080p
 - **Subtitle burn-in viral style** — bold, kuning/putih, border hitam tebal, di tengah layar
 - **Smart subtitle chunking** — subtitle dipecah jadi chunks 4-6 kata dengan prioritas break di titik/koma/pause natural (ala TikTok/Reels), auto-merge orphan
+- **Face tracking crop** (opt-in) — auto-follow speaker dengan active_speaker detection (frontal+profile Haar), state machine smoothing (diam saat listening, snap instant saat scene cut). Cocok untuk podcast/interview multi-person
 - **Hardware acceleration** — auto-pilih NVENC > VAAPI > QSV > libx264
 - **Parallel rendering** — render N clip bersamaan di hardware encoder
 - **Cross-platform** — satu perintah yang sama di Linux, Windows, macOS
@@ -281,6 +282,17 @@ python main.py "https://youtu.be/XXXX" --no-viral
 | `--subtitle-margin-top` | `0.75` | Posisi subtitle sebagai fraksi dari atas (0.75 = 75% dari atas = lower-third) |
 | `--output-resolution` | `1080` | `720` atau `1080` (tinggi 9:16) |
 
+### Face Tracking (opt-in)
+| Flag | Default | Deskripsi |
+|---|---|---|
+| `--smart-crop` | off | Aktifkan face tracking crop (auto-follow speaker) |
+
+Detail tuning tersedia di `test_facetrack.py` (script standalone untuk eksperimen cepat tanpa transkripsi). Parameter utama:
+- `--face-strategy`: `active_speaker` (default, prioritas wajah frontal = yang bicara), `bbox_center` (frame dua orang), `biggest`, `average`
+- `--trigger-threshold` (0.06): delta minimal untuk trigger transisi
+- `--transition-duration` (0): 0=instant snap, 0.3-0.8=gradual, 1.5=cinematic
+- `--transition-curve`: `ease_out`, `smoothstep`, `linear`
+
 ### Akselerasi
 | Flag | Default | Deskripsi |
 |---|---|---|
@@ -423,7 +435,10 @@ clip_builder/
 ├── downloader.py         URL → video mp4 + audio wav
 ├── transcriber.py        Faster-Whisper wrapper → JSON + SRT
 ├── highlighter.py        density/highlight detector + renderer (cut, crop, subtitle)
+├── face_tracker.py       face detection + state machine smoothing untuk smart-crop
+├── test_facetrack.py     script standalone untuk eksperimen face tracking cepat
 ├── main.py               CLI entry point (orchestrator)
+├── local_videos/         (opsional) folder video lokal untuk testing
 ├── requirements.txt
 ├── README.md
 └── .gitignore
@@ -435,6 +450,8 @@ clip_builder/
 - **`downloader.py`** — deteksi channel vs single, extract 3 terbaru, filter keyword, download + extract WAV 16kHz mono.
 - **`transcriber.py`** — load Faster-Whisper model (cache in-memory), transcribe dengan VAD filter, export JSON/SRT.
 - **`highlighter.py`** — dua strategi clipping: `group_by_density()` untuk pembagian 60s berbasis kepadatan, `pick_highlights()` untuk keyword-based. Plus `render_viral_clip()` dan `cut_clip()`.
+- **`face_tracker.py`** — deteksi wajah multi-cascade (frontal + profile), strategi `active_speaker`, state machine smoothing (stable ↔ transitioning), FFmpeg crop x-expression builder.
+- **`test_facetrack.py`** — CLI terpisah untuk test cepat parameter face tracking tanpa jalan pipeline lengkap.
 - **`main.py`** — argparse, orchestrate seluruh pipeline, tampilkan progress.
 
 ---
