@@ -120,6 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ai-metadata", action="store_true",
                    help="Generate viral title/description/hashtag via Groq LLM "
                         "(butuh GROQ_API_KEY di .env — gratis di console.groq.com)")
+    p.add_argument("--ai-hook", action="store_true",
+                   help="Detect 3-5 detik hook paling kuat di tiap clip, "
+                        "simpan timestamp + text ke meta.json")
+    p.add_argument("--render-hook", action="store_true",
+                   help="Juga render hook clip 3-5 detik sebagai file teaser terpisah "
+                        "(implies --ai-hook)")
     p.add_argument("--ai-polish", action="store_true",
                    help="Polish transkrip Whisper: hapus filler, fix typo, "
                         "konsistensi kapital (butuh GROQ_API_KEY)")
@@ -460,26 +466,67 @@ def main() -> None:
         )
         r["clips"] = [str(p) for p in clip_paths]
 
-        # --- AI metadata (opt-in): generate title/description/hashtag per clip ---
-        if args.ai_metadata and clip_paths:
+        # --- AI metadata + hook detection (opt-in) ---
+        want_metadata = args.ai_metadata
+        want_hook = args.ai_hook or args.render_hook
+        if (want_metadata or want_hook) and clip_paths:
             try:
-                from ai_metadata import generate_metadata, save_metadata, format_for_display
+                from ai_metadata import (
+                    generate_metadata, detect_hook_moment,
+                    save_metadata, format_for_display,
+                )
+                import subprocess as _sp
+
                 console.print(f"\n[bold cyan]Generate AI metadata ({len(clip_paths)} clip)...[/bold cyan]")
                 for idx, (clip_path, meta_entry) in enumerate(zip(clip_paths, clips_meta), start=1):
-                    clip_text = " ".join(
-                        s["text"] for s in transcript["segments"]
+                    clip_segs = [
+                        s for s in transcript["segments"]
                         if s["end"] > meta_entry["start"] and s["start"] < meta_entry["end"]
-                    )
-                    try:
-                        metadata = generate_metadata(clip_text)
-                        out_meta = save_metadata(metadata, Path(clip_path))
-                        console.print(f"\n[{idx}/{len(clip_paths)}] {Path(clip_path).name}")
-                        console.print(format_for_display(metadata))
+                    ]
+                    clip_text = " ".join(s["text"] for s in clip_segs)
+
+                    combined: dict = {}
+                    console.print(f"\n[{idx}/{len(clip_paths)}] {Path(clip_path).name}")
+
+                    if want_metadata:
+                        try:
+                            combined.update(generate_metadata(clip_text))
+                        except Exception as e:
+                            console.print(f"  [yellow]⚠ metadata gagal: {e}[/yellow]")
+
+                    if want_hook:
+                        try:
+                            hook = detect_hook_moment(clip_segs, clip_start_abs=meta_entry["start"])
+                            if hook:
+                                combined["hook"] = hook
+                                if args.render_hook:
+                                    # Cut hook dari rendered clip (portrait + subtitle + smart crop)
+                                    # dengan re-encode untuk akurasi frame (stream copy cut di
+                                    # keyframe, bisa meleset beberapa detik).
+                                    hook_out = Path(clip_path).with_name(
+                                        Path(clip_path).stem + "_hook.mp4"
+                                    )
+                                    _sp.run(
+                                        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                                         "-ss", f"{hook['hook_start']:.3f}",
+                                         "-i", str(Path(clip_path).resolve()),
+                                         "-t", f"{hook['hook_duration']:.3f}",
+                                         "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+                                         "-c:a", "aac",
+                                         "-movflags", "+faststart",
+                                         str(hook_out.resolve())],
+                                        check=True,
+                                    )
+                                    console.print(f"  [green]✂[/green] hook teaser: {hook_out.name}")
+                        except Exception as e:
+                            console.print(f"  [yellow]⚠ hook detection gagal: {e}[/yellow]")
+
+                    if combined:
+                        out_meta = save_metadata(combined, Path(clip_path))
+                        console.print(format_for_display(combined))
                         console.print(f"  [dim]saved: {out_meta.name}[/dim]")
-                    except Exception as e:
-                        console.print(f"  [yellow]⚠ AI metadata gagal untuk clip {idx}: {e}[/yellow]")
             except RuntimeError as e:
-                console.print(f"\n[red]AI metadata di-skip: {e}[/red]")
+                console.print(f"\n[red]AI features di-skip: {e}[/red]")
 
     # --- Ringkasan ---
     total_clips = sum(len(r.get("clips", [])) for r in results)

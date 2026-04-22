@@ -409,6 +409,94 @@ def polish_subtitles(
     return result
 
 
+_HOOK_SYSTEM_PROMPT = """Kamu video editor untuk konten viral TikTok/Reels/Shorts di Indonesia.
+
+TUGAS: dari clip pendek, pilih MOMEN PUNCAK berdurasi 3-5 detik yang bisa berdiri
+sendiri sebagai "hook teaser" — potongan paling catchy yang bikin viewer berhenti scroll.
+
+Kriteria hook yang KUAT:
+- Kalimat punch / kontroversial (contoh: "99% orang salah soal ini")
+- Angka spesifik / fakta mengejutkan
+- Pertanyaan yang hook curiosity
+- Emotional peak (kemarahan, kegembiraan, shock)
+- Call-out common mistake
+
+Kriteria yang HARUS dihindari:
+- Bagian intro/setup ("Halo teman-teman...")
+- Bagian penjelasan panjang ("Jadi maksudnya adalah...")
+- Kalimat yang tidak standalone tanpa konteks sebelumnya
+- Filler ("umm eh apa ya")
+
+OUTPUT WAJIB JSON:
+{
+  "hook_start": 12.5,
+  "hook_end": 16.2,
+  "text": "kalimat punch yang jadi hook",
+  "reason": "kenapa ini hook paling kuat",
+  "strength": 9.2
+}
+
+Rules:
+- hook_start dan hook_end dalam SATUAN DETIK RELATIF TERHADAP AWAL CLIP (0 = start clip)
+- Durasi 3-5 detik (minimum 2.5, maksimum 6)
+- Harus di boundary kalimat (lihat timestamp di input)
+- strength 1-10 (10 = terbaik)"""
+
+
+def detect_hook_moment(
+    clip_segments: list[dict],
+    clip_start_abs: float = 0.0,
+    model: str = "llama-3.3-70b-versatile",
+) -> dict | None:
+    """Detect 3-5 detik hook terkuat dalam clip. Return dict dengan timestamps
+    RELATIF ke awal clip, atau None kalau tidak ketemu.
+
+    clip_segments: segments yang masuk range clip (start-end sudah di-filter caller)
+    clip_start_abs: absolute start time dari clip (untuk compute relative)
+    """
+    if not clip_segments:
+        return None
+
+    client = _get_client()
+
+    # Format transcript dengan timestamp RELATIF
+    lines = []
+    for s in clip_segments:
+        rel_start = s["start"] - clip_start_abs
+        rel_end = s["end"] - clip_start_abs
+        lines.append(f"[{rel_start:.1f}-{rel_end:.1f}] {s['text']}")
+    transcript = "\n".join(lines)
+
+    chat = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": _HOOK_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Clip transcript (timestamp relatif detik):\n\n{transcript}"},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.5,
+        max_completion_tokens=500,
+    )
+    raw = chat.choices[0].message.content
+    data = json.loads(raw)
+
+    try:
+        start = float(data["hook_start"])
+        end = float(data["hook_end"])
+        if end <= start or end - start < 1.0:
+            return None
+        return {
+            "hook_start": round(start, 2),
+            "hook_end": round(end, 2),
+            "hook_duration": round(end - start, 2),
+            "text": data.get("text", ""),
+            "reason": data.get("reason", ""),
+            "strength": float(data.get("strength", 0)),
+        }
+    except (KeyError, ValueError, TypeError):
+        return None
+
+
 def format_for_display(metadata: dict) -> str:
     """Format metadata untuk ditampilkan ke terminal."""
     lines = ["\n[bold]Metadata AI:[/bold]"]
@@ -421,4 +509,12 @@ def format_for_display(metadata: dict) -> str:
     if metadata.get("hashtags"):
         tags = " ".join(metadata["hashtags"])
         lines.append(f"  [cyan]Hashtags:[/cyan] {tags}")
+    if metadata.get("hook"):
+        h = metadata["hook"]
+        lines.append(
+            f"  [cyan]Hook:[/cyan] {h['hook_start']}s → {h['hook_end']}s "
+            f"({h['hook_duration']}s, strength {h['strength']})"
+        )
+        lines.append(f"    [dim]text: {h['text'][:80]}[/dim]")
+        lines.append(f"    [dim]reason: {h['reason']}[/dim]")
     return "\n".join(lines)
