@@ -409,27 +409,49 @@ python main.py "https://youtu.be/XXXX" --no-viral
 
 Alternatif jalan dari browser — semua fitur CLI tersedia dengan hint per field.
 
-```bash
-source venv/bin/activate
-python app.py
-# Buka http://127.0.0.1:7860
-```
+**Windows**: double-click `run_windows.bat`
+**Linux**: `./run_linux.sh` (atau `python app.py`)
+**macOS**: `python app.py`
+
+URL: **http://127.0.0.1:7860** (browser auto-buka otomatis)
+
+### Quick Action Buttons (paling atas)
+- **🚫 Matikan Semua AI** — sekali klik reset semua AI toggle ke off + strategy ke `density`. Berguna saat rate-limit Groq tercapai atau mau run cepat tanpa API call.
+- **📁 Buka Folder Output** — buka `Output_Clips/` di file manager OS (Explorer/Finder/xdg-open).
 
 ### Fitur Web UI
 - **Input panel**: URL YouTube atau upload file batch `.txt`
-- **Accordions logis**: Subtitle Style, Face Tracking, Clipping Strategy, AI Features, Advanced
-- **Hint per field**: dampak speed (+30s, ~instant), contoh isian, kapan dipakai
+- **Basic settings visible**: Model, Quality, Aspect, Jumlah Clip, **Warna Subtitle** langsung terlihat (tidak tersembunyi di accordion)
+- **Accordions logis** (collapsed/open sesuai relevance): Tuning Subtitle, Face Tracking, Clipping Strategy, AI Features, Advanced
+- **Hint per field**: dampak speed (+30s, ~instant), contoh isian, estimasi token untuk fitur AI
 - **Auto-detect Groq**: fitur AI toggle otomatis aktif kalau `.env` punya `GROQ_API_KEY`
+- **Translate checkbox explicit**: translate hanya jalan kalau ✓ checkbox ON AND field bahasa diisi — hemat token
+- **Button loading state**: saat klik Generate, button disable + "⏳ Memproses..." + Gradio progress bar
+- **Live progress di terminal**: stream output Whisper/FFmpeg/AI real-time ke terminal tempat script dijalankan
+- **Anti-overwrite**: kalau file clip dengan nama sama sudah ada, clip baru auto-rename pakai timestamp `YYYYmmdd_HHMMSS`
 - **Output tabs**:
   - 🎬 Preview — video player clip pertama + metadata markdown (title/description/hashtag/hook)
   - 📁 Semua File — download list clips + hook teasers
   - 📊 Metadata JSON — raw JSON per clip
 
 ### Tip Pakai Web UI
-- First time: default setting, klik **Generate Clips** → tunggu
-- Preview cepat: centang **max clips = 1** di atas
-- Eksperimen: buka accordion **Advanced** untuk tune parallel, language, encoder
+- First time: default setting + centang AI features yang diinginkan → klik **Generate Clips**
+- Preview cepat: set **Jumlah Clip = 1** + model `tiny` → ~3 menit
+- Rate-limit Groq? klik **🚫 Matikan Semua AI** → lanjut pakai density strategy (no API)
 - Batch: upload `.txt` berisi daftar URL, field URL di atas diabaikan otomatis
+- Buka hasil: klik **📁 Buka Folder Output** setelah selesai
+
+### Pilih AI Feature Sesuai Budget Token (Groq free tier: 100k/hari)
+
+| Feature | Token/video | Kapan ON |
+|---|---|---|
+| Metadata (title/desc/hashtag) | ~400/clip | Selalu (paling ringan) |
+| Hook Detection | ~500/clip | Kalau butuh teaser moment |
+| Polish Subtitle | ~4k/video | Kalau Whisper banyak typo |
+| Translate | ~4k/video/bahasa | Kalau ekspansi audience |
+| Smart Highlight | ~5-10k/video | Kalau butuh clip curation AI |
+
+Setiap AI feature **independent try/except** — kalau satu gagal (misal rate limit), lainnya tetap lanjut dan pipeline tidak crash.
 
 ---
 
@@ -558,14 +580,23 @@ clip_builder/
 │   └── <video_id>.wav                    audio 16kHz mono untuk Whisper
 ├── transcripts/
 │   ├── <video_id>.json                   transkrip lengkap (dengan _cache_meta)
-│   ├── <video_id>.srt                    subtitle full video
+│   ├── <video_id>.srt                    subtitle full video (bahasa asli)
+│   ├── <video_id>.en.srt                 subtitle translated (kalau --ai-translate en)
 │   └── <video_id>_highlights.json        metadata clip
 └── Output_Clips/
-    ├── <video_id>_clip_01.mp4            main clip viral (portrait/square/landscape)
+    ├── <video_id>_clip_01.mp4            main clip viral (run pertama, nama clean)
     ├── <video_id>_clip_01_hook.mp4       hook teaser 3-5 detik (kalau --render-hook)
     ├── <video_id>_clip_01.meta.json      {titles, description, hashtags, hook}
-    └── <video_id>_clip_NN.mp4            ...
+    ├── <video_id>_clip_01_20260422_143500.mp4   run kedua (conflict → timestamp)
+    └── <video_id>_clip_01_20260422_144200.mp4   run ketiga
 ```
+
+### Konvensi Nama File Clip
+
+- **Run pertama** (folder kosong): nama clean `<video>_clip_NN.mp4`
+- **Run berikutnya** (kalau ada conflict): auto-append timestamp `_YYYYmmdd_HHMMSS`
+- Semua clip dari 1 run share timestamp yang sama (mudah kelompokkan)
+- **Lama clip TIDAK ter-overwrite** — preserved untuk perbandingan
 
 ### Isi `.meta.json` per Clip
 
