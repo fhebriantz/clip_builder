@@ -174,21 +174,59 @@ def run_pipeline(
     if translate_to and translate_to.strip():
         cmd += ["--ai-translate", translate_to.strip()]
 
-    progress(0.05, desc="Menjalankan pipeline (bisa 3-30 menit tergantung model)...")
+    progress(0.02, desc="Memulai pipeline...")
+    print(f"\n{'='*60}\n[Web UI] Running: {' '.join(cmd)}\n{'='*60}\n", flush=True)
+
+    # Stream output ke terminal + update progress berdasar phase detection
+    _PHASES = [
+        ("download", 0.08, "Download video..."),
+        ("✓ video:", 0.12, "Download selesai"),
+        ("✓ audio:", 0.15, "Audio ter-ekstrak"),
+        ("Transkripsi", 0.20, "Whisper transcribe..."),
+        ("Loading Whisper", 0.22, "Loading model Whisper..."),
+        ("cache hit", 0.50, "Cache hit — skip Whisper"),
+        ("ai polish", 0.55, "AI polish subtitle..."),
+        ("AI translate", 0.60, "Translate subtitle..."),
+        ("density", 0.65, "Pilih clip density..."),
+        ("highlight", 0.65, "Pilih clip highlight..."),
+        ("Smart crop", 0.75, "Face tracking + render..."),
+        ("Clip 1:", 0.78, "Render clip 1..."),
+        ("Clip 2:", 0.82, "Render clip 2..."),
+        ("Clip 3:", 0.86, "Render clip 3..."),
+        ("AI metadata", 0.90, "Generate metadata AI..."),
+        ("hook teaser", 0.93, "Render hook teaser..."),
+        ("Selesai", 0.97, "Hampir selesai..."),
+    ]
+
+    all_lines: list[str] = []
+    try:
+        proc = subprocess.Popen(
+            cmd, cwd=str(PROJECT_ROOT),
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+    except Exception as e:
+        return f"❌ Gagal start pipeline: {e}", None, None, None, None, None
 
     try:
-        result = subprocess.run(
-            cmd, cwd=str(PROJECT_ROOT),
-            capture_output=True, text=True, timeout=7200,
-        )
+        for line in proc.stdout:
+            all_lines.append(line)
+            print(line, end="", flush=True)  # stream ke terminal
+            low = line.lower()
+            for phrase, pct, desc in _PHASES:
+                if phrase.lower() in low:
+                    progress(pct, desc=desc)
+                    break
+        proc.wait(timeout=7200)
     except subprocess.TimeoutExpired:
+        proc.kill()
         return "❌ Timeout setelah 2 jam", None, None, None, None, None
 
-    if result.returncode != 0:
-        err_tail = "\n".join(result.stderr.strip().splitlines()[-20:])
-        return f"### ❌ Error (exit {result.returncode})\n```\n{err_tail}\n```", None, None, None, None, None
+    if proc.returncode != 0:
+        err_tail = "".join(all_lines[-20:])
+        return f"### ❌ Error (exit {proc.returncode})\n```\n{err_tail}\n```", None, None, None, None, None
 
-    progress(0.95, desc="Mengumpulkan hasil...")
+    progress(0.98, desc="Mengumpulkan hasil...")
 
     after = _list_existing_clips()
     new_files = after - before
@@ -212,7 +250,7 @@ def run_pipeline(
     meta_md = _format_meta_display(first_meta)
     all_meta = {p.name: _load_meta(p) for p in main_clips}
 
-    stdout_tail = "\n".join(result.stdout.strip().splitlines()[-10:])
+    stdout_tail = "".join(all_lines[-10:]).rstrip()
     status_md = (
         f"### ✅ Selesai — {len(main_clips)} clip dihasilkan\n\n"
         + (f"🎬 {len(hook_clips)} hook teaser tambahan\n\n" if hook_clips else "")
@@ -286,22 +324,22 @@ def build_app():
                     "Cache aktif — run kedua dengan setting sama INSTAN skip Whisper.</sub>"
                 )
 
-                max_clips = gr.Slider(
-                    1, 10, value=3, step=1, label="Jumlah Clip",
-                    info="Semakin banyak clip = waktu render proporsional (1 clip ~30 detik)",
-                )
+                with gr.Row():
+                    max_clips = gr.Slider(
+                        1, 10, value=3, step=1, label="Jumlah Clip",
+                        info="Semakin banyak clip = waktu render proporsional",
+                    )
+                    subtitle_color = gr.Radio(
+                        ["yellow", "white"], value="yellow", label="🎨 Warna Subtitle",
+                        info="Kuning klasik viral, putih netral",
+                    )
 
-                # — Subtitle Style —
-                with gr.Accordion("🎨 Subtitle Style", open=False):
-                    with gr.Row():
-                        subtitle_color = gr.Radio(
-                            ["yellow", "white"], value="yellow", label="Warna",
-                            info="Kuning = klasik viral, putih = netral",
-                        )
-                        font_size = gr.Slider(
-                            10, 24, value=14, step=1, label="Font Size",
-                            info="14 optimal mobile, 18+ kalau mau besar",
-                        )
+                # — Subtitle Style (tuning lanjutan) —
+                with gr.Accordion("🎨 Tuning Subtitle (font, posisi, panjang)", open=False):
+                    font_size = gr.Slider(
+                        10, 24, value=14, step=1, label="Font Size",
+                        info="14 optimal mobile, 18+ kalau mau besar",
+                    )
                     subtitle_margin_top = gr.Slider(
                         0.5, 0.95, value=0.75, step=0.05,
                         label="Posisi Subtitle (% dari atas)",
