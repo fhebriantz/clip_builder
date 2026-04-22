@@ -1,13 +1,9 @@
-"""Gradio Web UI untuk AI Video Clipper.
+"""Gradio Web UI untuk AI Video Clipper — akses semua fitur CLI via browser.
 
 Jalankan:
   python app.py
 
-Lalu buka http://127.0.0.1:7860 di browser.
-
-UI ini wrapper di atas main.py — semua fitur CLI tersedia via toggle/dropdown.
-Output (clip mp4, hook teaser, metadata JSON) langsung ditampilkan untuk preview
-dan download.
+Buka http://127.0.0.1:7860
 """
 from __future__ import annotations
 
@@ -30,14 +26,12 @@ HAS_GROQ = bool(os.environ.get("GROQ_API_KEY"))
 
 
 def _list_existing_clips() -> set[str]:
-    """Snapshot nama file Output_Clips sekarang — untuk deteksi file baru."""
     if not OUTPUT_DIR.exists():
         return set()
     return {p.name for p in OUTPUT_DIR.glob("*")}
 
 
 def _load_meta(clip_path: Path) -> dict:
-    """Load .meta.json sibling kalau ada."""
     meta = clip_path.with_suffix(".meta.json")
     if meta.exists():
         try:
@@ -48,105 +42,157 @@ def _load_meta(clip_path: Path) -> dict:
 
 
 def _format_meta_display(meta: dict) -> str:
-    """Format metadata jadi markdown untuk display."""
     if not meta:
-        return "_Metadata tidak tersedia_"
+        return "_Metadata tidak tersedia (fitur AI tidak aktif)_"
     lines: list[str] = []
-    titles = meta.get("titles") or []
-    if titles:
-        lines.append("### Title Options")
-        for i, t in enumerate(titles, 1):
+    if meta.get("titles"):
+        lines.append("### 🎯 Title Options")
+        for i, t in enumerate(meta["titles"], 1):
             lines.append(f"{i}. **{t}**")
     if meta.get("description"):
-        lines.append("\n### Description")
+        lines.append("\n### 📝 Description")
         lines.append(meta["description"])
     if meta.get("hashtags"):
-        lines.append("\n### Hashtags")
+        lines.append("\n### 🏷️ Hashtags")
         lines.append(" ".join(meta["hashtags"]))
     if meta.get("hook"):
         h = meta["hook"]
-        lines.append("\n### Hook Moment")
-        lines.append(f"- Timestamp: {h['hook_start']}s → {h['hook_end']}s ({h['hook_duration']}s)")
-        lines.append(f"- Strength: {h['strength']}/10")
-        lines.append(f"- Text: *{h['text']}*")
-        lines.append(f"- Alasan: {h['reason']}")
+        lines.append("\n### ⚡ Hook Moment")
+        lines.append(f"- **Timestamp**: {h['hook_start']}s → {h['hook_end']}s (durasi {h['hook_duration']}s)")
+        lines.append(f"- **Strength**: {h['strength']}/10")
+        lines.append(f"- **Text**: *\"{h['text']}\"*")
+        lines.append(f"- **Alasan**: {h['reason']}")
     return "\n".join(lines) if lines else "_Metadata kosong_"
 
 
 def run_pipeline(
     url,
+    batch_file,
     model,
     resolution,
     aspect,
     max_clips,
+    # Subtitle
+    subtitle_color,
+    font_size,
+    subtitle_margin_top,
+    subtitle_min_words,
+    subtitle_max_words,
+    # Crop
     smart_crop,
-    use_ai_strategy,
-    use_polish,
-    polish_topic,
-    polish_fix,
+    # Strategy
+    strategy,
+    target_duration,
+    silence_threshold,
+    min_clip_duration,
+    highlight_keywords,
+    min_score,
+    # AI features
     use_metadata,
     use_hook,
     render_hook,
-    subtitle_color,
+    use_polish,
+    polish_topic,
+    polish_vocab,
+    polish_fix,
+    translate_to,
+    # Advanced
+    language,
     initial_prompt,
+    parallel,
+    encoder,
+    no_cache,
+    no_viral,
     progress=gr.Progress(track_tqdm=False),
 ):
-    """Execute pipeline, yield progress updates, return outputs."""
+    """Build CLI args and run main.py subprocess, collect outputs."""
+    # Validate input
     if not url or not url.strip():
-        return "Error: URL kosong", None, None, None, None, None
+        if batch_file is None:
+            return "❌ Error: kasih URL atau upload file batch .txt", None, None, None, None, None
 
-    # Snapshot before run — detect new files after
     before = _list_existing_clips()
+    cmd = [sys.executable, "main.py", "-y"]
 
-    cmd = [
-        sys.executable, "main.py", url.strip(), "-y",
+    if batch_file is not None:
+        # Simpan uploaded file di folder kerja
+        batch_path = PROJECT_ROOT / "local_videos" / "batch_webui.txt"
+        batch_path.parent.mkdir(exist_ok=True)
+        # batch_file dari Gradio adalah NamedString-like atau file obj
+        src = Path(batch_file.name if hasattr(batch_file, "name") else str(batch_file))
+        batch_path.write_bytes(src.read_bytes())
+        cmd += ["--batch", str(batch_path)]
+    else:
+        cmd.append(url.strip())
+
+    cmd += [
         "--model", model,
         "--output-resolution", str(int(resolution)),
         "--aspect", aspect,
         "--max-clips", str(int(max_clips)),
         "--subtitle-color", subtitle_color,
+        "--font-size", str(int(font_size)),
+        "--subtitle-margin-top", str(float(subtitle_margin_top)),
+        "--subtitle-min-words", str(int(subtitle_min_words)),
+        "--subtitle-max-words", str(int(subtitle_max_words)),
+        "--strategy", strategy,
+        "--target-duration", str(float(target_duration)),
+        "--silence-threshold", str(float(silence_threshold)),
+        "--min-clip-duration", str(float(min_clip_duration)),
+        "--parallel", str(int(parallel)),
+        "--encoder", encoder,
     ]
     if smart_crop:
         cmd.append("--smart-crop")
-    if use_ai_strategy:
-        cmd += ["--strategy", "ai"]
-    if use_polish:
-        cmd.append("--ai-polish")
-        if polish_topic and polish_topic.strip():
-            cmd += ["--polish-topic", polish_topic.strip()]
-        if polish_fix and polish_fix.strip():
-            cmd += ["--polish-fix", polish_fix.strip()]
+    if highlight_keywords and highlight_keywords.strip():
+        cmd += ["--highlight-keywords", highlight_keywords.strip()]
+    if min_score and int(min_score) != 1:
+        cmd += ["--min-score", str(int(min_score))]
+    if language and language.strip() and language.lower() != "auto":
+        cmd += ["--language", language.strip()]
+    if initial_prompt and initial_prompt.strip():
+        cmd += ["--initial-prompt", initial_prompt.strip()]
+    if no_cache:
+        cmd.append("--no-cache")
+    if no_viral:
+        cmd.append("--no-viral")
+
     if use_metadata:
         cmd.append("--ai-metadata")
     if use_hook:
         cmd.append("--ai-hook")
     if render_hook:
         cmd.append("--render-hook")
-    if initial_prompt and initial_prompt.strip():
-        cmd += ["--initial-prompt", initial_prompt.strip()]
+    if use_polish:
+        cmd.append("--ai-polish")
+        if polish_topic and polish_topic.strip():
+            cmd += ["--polish-topic", polish_topic.strip()]
+        if polish_vocab and polish_vocab.strip():
+            cmd += ["--polish-vocab", polish_vocab.strip()]
+        if polish_fix and polish_fix.strip():
+            cmd += ["--polish-fix", polish_fix.strip()]
+    if translate_to and translate_to.strip():
+        cmd += ["--ai-translate", translate_to.strip()]
 
-    progress(0.1, desc="Menjalankan pipeline...")
+    progress(0.05, desc="Menjalankan pipeline (bisa 3-30 menit tergantung model)...")
 
-    # Run subprocess, stream stdout ke log biar tidak freeze
     try:
         result = subprocess.run(
             cmd, cwd=str(PROJECT_ROOT),
-            capture_output=True, text=True, timeout=3600,
+            capture_output=True, text=True, timeout=7200,
         )
     except subprocess.TimeoutExpired:
-        return "Error: timeout setelah 1 jam", None, None, None, None, None
+        return "❌ Timeout setelah 2 jam", None, None, None, None, None
 
     if result.returncode != 0:
         err_tail = "\n".join(result.stderr.strip().splitlines()[-20:])
-        return f"### Error (exit {result.returncode})\n```\n{err_tail}\n```", None, None, None, None, None
+        return f"### ❌ Error (exit {result.returncode})\n```\n{err_tail}\n```", None, None, None, None, None
 
-    progress(0.9, desc="Mengumpulkan hasil...")
+    progress(0.95, desc="Mengumpulkan hasil...")
 
-    # Detect new clip files
     after = _list_existing_clips()
     new_files = after - before
 
-    # Organize by type
     main_clips = sorted(
         OUTPUT_DIR / f for f in new_files
         if f.endswith(".mp4") and "_hook" not in f
@@ -157,26 +203,21 @@ def run_pipeline(
     )
 
     if not main_clips:
-        return "Selesai tapi tidak ada clip baru terdeteksi", None, None, None, None, None
+        return "⚠️ Selesai tapi tidak ada clip baru terdeteksi", None, None, None, None, None
 
-    # Build display output — first clip preview, all clips as file list, metadata markdown
     first_clip = str(main_clips[0])
     all_files = [str(p) for p in main_clips] + [str(p) for p in hook_clips]
 
-    # Metadata dari clip pertama
     first_meta = _load_meta(main_clips[0])
     meta_md = _format_meta_display(first_meta)
-
-    # JSON raw semua metadata
     all_meta = {p.name: _load_meta(p) for p in main_clips}
 
-    # Log tail
-    stdout_tail = "\n".join(result.stdout.strip().splitlines()[-15:])
+    stdout_tail = "\n".join(result.stdout.strip().splitlines()[-10:])
     status_md = (
-        f"### ✓ Selesai — {len(main_clips)} clip dihasilkan\n\n"
-        + (f"{len(hook_clips)} hook teaser file.\n\n" if hook_clips else "")
-        + f"**Preview:** clip pertama di panel kanan.\n\n"
-        + f"<details><summary>Log terminal (15 baris terakhir)</summary>\n\n```\n{stdout_tail}\n```\n</details>"
+        f"### ✅ Selesai — {len(main_clips)} clip dihasilkan\n\n"
+        + (f"🎬 {len(hook_clips)} hook teaser tambahan\n\n" if hook_clips else "")
+        + f"**Preview clip pertama di panel kanan.**\n\n"
+        + f"<details><summary>Log terminal (10 baris terakhir)</summary>\n\n```\n{stdout_tail}\n```\n</details>"
     )
 
     progress(1.0, desc="Done")
@@ -186,110 +227,253 @@ def run_pipeline(
 def build_app():
     with gr.Blocks(title="AI Video Clipper") as app:
         gr.Markdown(
-            "# AI Video Clipper\n"
-            "Ubah video YouTube jadi clip viral untuk TikTok/Reels/Shorts — "
-            "lokal, gratis, dengan face tracking + AI smart highlight."
+            "# 🎬 AI Video Clipper\n"
+            "Ubah video YouTube panjang jadi clip viral siap upload ke TikTok, Reels, atau Shorts.\n\n"
+            "💡 **Tip pertama kali pakai:** kasih 1 URL, pakai default semua, klik Generate. "
+            "Setelah hasil muncul baru eksplor fitur advanced."
         )
 
+        ai_banner = (
+            "✅ **GROQ_API_KEY terdeteksi** — fitur AI tersedia"
+            if HAS_GROQ
+            else "⚠️ **GROQ_API_KEY tidak ketemu di `.env`.** Fitur AI akan di-skip. "
+                 "[Daftar gratis di console.groq.com](https://console.groq.com)"
+        )
+        gr.Markdown(ai_banner)
+
         with gr.Row():
-            # === Input Panel ===
+            # ═══ LEFT: INPUTS ═══
             with gr.Column(scale=1):
+
+                # — Input —
+                gr.Markdown("### 📥 Input")
                 url = gr.Textbox(
                     label="YouTube URL",
-                    placeholder="https://www.youtube.com/watch?v=...",
-                    lines=1,
+                    placeholder="https://youtu.be/VIDEO_ID  atau channel URL",
+                    info="Single video, channel (ambil N terbaru), atau Shorts URL",
+                )
+                batch_file = gr.File(
+                    label="Atau upload file batch (.txt berisi list URL)",
+                    file_types=[".txt"],
+                    type="filepath",
+                )
+                gr.Markdown(
+                    "<sub>📋 Format file batch: 1 URL per baris. Baris diawali `#` di-skip. "
+                    "Kalau pakai batch, field URL di atas diabaikan.</sub>"
                 )
 
+                # — Basic Settings —
+                gr.Markdown("### ⚙️ Basic Settings")
                 with gr.Row():
                     model = gr.Dropdown(
                         ["tiny", "base", "small", "medium", "large-v3"],
-                        value="small",
-                        label="Whisper Model",
-                        info="small = balance terbaik untuk bahasa Indonesia",
+                        value="small", label="Whisper Model",
+                        info="small = balance terbaik bhs Indonesia",
                     )
                     resolution = gr.Dropdown(
                         [720, 1080], value=1080, label="Quality",
-                        info="720p lebih cepat, 1080p FHD",
+                        info="720p ~2x lebih cepat",
                     )
                     aspect = gr.Dropdown(
                         ["9:16", "1:1", "16:9"], value="9:16",
                         label="Aspect Ratio",
-                        info="9:16 TikTok/Reels, 1:1 IG feed, 16:9 YouTube",
+                        info="9:16 TikTok, 1:1 IG feed, 16:9 YouTube",
                     )
+
+                gr.Markdown(
+                    "<sub>⏱️ **Estimasi Whisper 20-menit audio di CPU:** "
+                    "tiny 3min · base 8min · **small 15min** · medium 30min · large-v3 50min. "
+                    "Cache aktif — run kedua dengan setting sama INSTAN skip Whisper.</sub>"
+                )
 
                 max_clips = gr.Slider(
-                    1, 10, value=3, step=1,
-                    label="Max Clips", info="Batasi jumlah clip per video",
+                    1, 10, value=3, step=1, label="Jumlah Clip",
+                    info="Semakin banyak clip = waktu render proporsional (1 clip ~30 detik)",
                 )
 
-                with gr.Accordion("Subtitle & Crop", open=True):
-                    subtitle_color = gr.Radio(
-                        ["yellow", "white"], value="yellow", label="Subtitle Color",
+                # — Subtitle Style —
+                with gr.Accordion("🎨 Subtitle Style", open=False):
+                    with gr.Row():
+                        subtitle_color = gr.Radio(
+                            ["yellow", "white"], value="yellow", label="Warna",
+                            info="Kuning = klasik viral, putih = netral",
+                        )
+                        font_size = gr.Slider(
+                            10, 24, value=14, step=1, label="Font Size",
+                            info="14 optimal mobile, 18+ kalau mau besar",
+                        )
+                    subtitle_margin_top = gr.Slider(
+                        0.5, 0.95, value=0.75, step=0.05,
+                        label="Posisi Subtitle (% dari atas)",
+                        info="0.75 = lower-third (viral). 0.5 = tengah. 0.9 = bawah",
                     )
+                    with gr.Row():
+                        subtitle_min_words = gr.Slider(
+                            2, 10, value=4, step=1, label="Min Kata/Chunk",
+                            info="Chunk minimum 4 kata biar tidak terlalu pendek",
+                        )
+                        subtitle_max_words = gr.Slider(
+                            4, 12, value=6, step=1, label="Max Kata/Chunk",
+                            info="Chunk max 6 kata = gaya TikTok/Reels viral",
+                        )
+
+                # — Face Tracking —
+                with gr.Accordion("📹 Face Tracking & Crop", open=True):
                     smart_crop = gr.Checkbox(
-                        label="Smart crop (face tracking auto-follow speaker)",
+                        label="Smart crop (auto-follow speaker)",
                         value=True,
+                        info="+30-60s per clip. Camera auto-follow wajah pembicara. "
+                             "Wajib untuk podcast/interview multi-orang.",
                     )
 
-                ai_enabled_note = (
-                    "✓ GROQ_API_KEY terdeteksi — fitur AI tersedia"
-                    if HAS_GROQ
-                    else "⚠ GROQ_API_KEY tidak ditemukan. Fitur AI tidak akan jalan. "
-                         "Daftar gratis di console.groq.com dan set di .env"
-                )
-                gr.Markdown(f"### AI Features\n{ai_enabled_note}")
-
-                with gr.Group():
-                    use_ai_strategy = gr.Checkbox(
-                        label="AI Smart Highlight (LLM pilih momen viral-worthy)",
-                        value=HAS_GROQ,
+                # — Clipping Strategy —
+                with gr.Accordion("✂️ Strategi Clipping", open=True):
+                    strategy = gr.Radio(
+                        ["density", "highlight", "both", "ai"],
+                        value=("ai" if HAS_GROQ else "density"),
+                        label="Metode pilih clip",
+                        info="density=urut dari awal (cepat, tanpa AI) · "
+                             "ai=LLM pilih viral moments (terbaik, butuh Groq)",
                     )
+                    with gr.Row():
+                        target_duration = gr.Slider(
+                            15, 120, value=60, step=5,
+                            label="Target Durasi Clip (detik)",
+                            info="60 detik optimal untuk Reels/Shorts",
+                        )
+                        min_clip_duration = gr.Slider(
+                            10, 60, value=20, step=5,
+                            label="Min Durasi",
+                            info="Buang clip lebih pendek dari ini",
+                        )
+                    silence_threshold = gr.Slider(
+                        0.5, 5, value=2, step=0.5,
+                        label="Silence Threshold (detik)",
+                        info="Jeda sunyi >= ini dianggap batas clip (density)",
+                    )
+                    with gr.Row():
+                        highlight_keywords = gr.Textbox(
+                            label="Highlight Keywords",
+                            placeholder="bisnis,profit,strategi",
+                            info="Dipisah koma. Hanya untuk strategy highlight/both.",
+                        )
+                        min_score = gr.Slider(
+                            1, 5, value=1, step=1, label="Min Score",
+                            info="Threshold keyword/hook match (highlight only)",
+                        )
+
+                # — AI Features —
+                ai_disabled = not HAS_GROQ
+                with gr.Accordion(
+                    f"🤖 AI Features{'  (Groq tidak terdeteksi)' if ai_disabled else ''}",
+                    open=HAS_GROQ,
+                ):
+                    gr.Markdown(
+                        "💡 Semua fitur AI opt-in. Tanpa Groq, toggle AI di-ignore otomatis."
+                    )
+
                     use_metadata = gr.Checkbox(
                         label="Generate Title + Description + Hashtag",
                         value=HAS_GROQ,
+                        info="+1-2s per clip. Output di .meta.json: 3 opsi title viral, caption, 8 hashtag",
                     )
                     use_hook = gr.Checkbox(
                         label="Detect Hook Moment (3-5 detik puncak)",
                         value=HAS_GROQ,
+                        info="+1s per clip. LLM pilih kalimat punch terkuat, timestamp disimpan",
                     )
                     render_hook = gr.Checkbox(
-                        label="Render Hook Teaser (file terpisah 3-5 detik)",
+                        label="Render Hook Teaser (file terpisah)",
                         value=False,
+                        info="+5-10s per clip. Bikin file *_hook.mp4 durasi 3-5s untuk teaser ultra-short",
                     )
+
                     use_polish = gr.Checkbox(
                         label="Polish Subtitle (fix typo + hapus filler)",
                         value=False,
+                        info="+5-15s total. Fix 'umm eh apa ya' dan typo Whisper (conesi→koneksi)",
                     )
-
-                with gr.Accordion("Polish & Context (advanced)", open=False):
                     polish_topic = gr.Textbox(
-                        label="Polish Topic Hint",
-                        placeholder="Video mindset bisnis membahas orang serakah",
-                        info="Bantu LLM disambiguasi typo berdasar konteks",
+                        label="Polish Topic (kasih konteks buat LLM)",
+                        placeholder="Video mindset bisnis membahas orang serakah dan sukses",
+                        info="Bantu LLM fix typo ambigu. Contoh: konteks 'bisnis' → 'straka' jadi 'serakah'",
+                    )
+                    polish_vocab = gr.Textbox(
+                        label="Polish Vocabulary (kata penting dipisah koma)",
+                        placeholder="serakah,rakus,koneksi,milenial,mindset",
+                        info="LLM prefer ejaan ini saat Whisper salah dengar",
                     )
                     polish_fix = gr.Textbox(
-                        label="Manual Corrections",
+                        label="Manual Fix (paling reliable)",
                         placeholder="straka=serakah,conesi=koneksi",
-                        info="Format 'salah=benar' dipisah koma",
-                    )
-                    initial_prompt = gr.Textbox(
-                        label="Whisper Initial Prompt",
-                        placeholder="mindset bisnis serakah koneksi",
-                        info="Boost akurasi Whisper untuk vocab spesifik",
+                        info="Replace 'salah=benar' dipisah koma. 100% override — pasti di-apply",
                     )
 
-                run_btn = gr.Button("Generate Clips", variant="primary", size="lg")
+                    translate_to = gr.Textbox(
+                        label="Translate Subtitle Ke Bahasa",
+                        placeholder="en / ja / es / zh / fr / Japanese / Arabic...",
+                        info="+10-30s. Subtitle di-burn ke video dalam bahasa target. 50+ bahasa supported",
+                    )
 
-            # === Output Panel ===
+                # — Advanced —
+                with gr.Accordion("🔧 Advanced (biarkan default kalau ragu)", open=False):
+                    with gr.Row():
+                        language = gr.Dropdown(
+                            ["auto", "id", "en", "ja", "zh", "es", "ko", "ar"],
+                            value="auto", label="Force Language",
+                            info="auto = deteksi otomatis (direkomendasi)",
+                        )
+                        initial_prompt = gr.Textbox(
+                            label="Whisper Initial Prompt",
+                            placeholder="mindset bisnis koneksi serakah",
+                            info="Bias Whisper ke vocab ini — boost akurasi kata spesifik",
+                        )
+                    with gr.Row():
+                        parallel = gr.Slider(
+                            1, 4, value=1, step=1, label="Parallel Render",
+                            info="2-3 lebih cepat kalau pakai hw encoder (NVENC/VAAPI). libx264 tidak membantu",
+                        )
+                        encoder = gr.Dropdown(
+                            ["auto", "libx264", "h264_vaapi", "h264_nvenc", "h264_qsv"],
+                            value="auto", label="FFmpeg Encoder",
+                            info="auto pilih terbaik (hw > sw). Override kalau troubleshoot",
+                        )
+                    no_cache = gr.Checkbox(
+                        label="Force re-transcribe (skip cache)",
+                        value=False,
+                        info="Paksa Whisper ulang (~15 menit). Aktifkan kalau ganti audio/kasus edge",
+                    )
+                    no_viral = gr.Checkbox(
+                        label="Skip viral render (raw cut only)",
+                        value=False,
+                        info="Stream copy ~instant, tidak ada 9:16/subtitle/smart-crop. Buat preview cepat",
+                    )
+
+                run_btn = gr.Button(
+                    "🚀 Generate Clips", variant="primary", size="lg",
+                )
+                gr.Markdown(
+                    "<sub>💡 **Estimasi waktu total:** video 20 menit dengan default setting "
+                    "= ~15 menit run pertama (mayoritas Whisper), ~2-3 menit run berikutnya (cache aktif).</sub>"
+                )
+
+            # ═══ RIGHT: OUTPUTS ═══
             with gr.Column(scale=1):
-                status = gr.Markdown("_Belum mulai. Masukkan URL dan klik Generate._")
+                status = gr.Markdown("_Siap. Klik Generate Clips untuk mulai._")
+
                 with gr.Tabs():
-                    with gr.Tab("Preview (Clip 1)"):
-                        video_preview = gr.Video(label="First Clip")
+                    with gr.Tab("🎬 Preview"):
+                        video_preview = gr.Video(
+                            label="Clip Pertama", autoplay=False,
+                        )
                         meta_display = gr.Markdown("")
-                    with gr.Tab("Semua File"):
-                        files_list = gr.Files(label="Download clips & teasers")
-                    with gr.Tab("Metadata JSON"):
+
+                    with gr.Tab("📁 Semua File"):
+                        files_list = gr.Files(
+                            label="Download clips & teasers (klik file untuk download)",
+                        )
+
+                    with gr.Tab("📊 Metadata JSON"):
                         meta_json = gr.JSON(label="Raw metadata per clip")
 
         dummy = gr.State(None)
@@ -297,18 +481,31 @@ def build_app():
         run_btn.click(
             fn=run_pipeline,
             inputs=[
-                url, model, resolution, aspect, max_clips, smart_crop,
-                use_ai_strategy, use_polish, polish_topic, polish_fix,
+                url, batch_file,
+                model, resolution, aspect, max_clips,
+                subtitle_color, font_size, subtitle_margin_top,
+                subtitle_min_words, subtitle_max_words,
+                smart_crop,
+                strategy, target_duration, silence_threshold,
+                min_clip_duration, highlight_keywords, min_score,
                 use_metadata, use_hook, render_hook,
-                subtitle_color, initial_prompt,
+                use_polish, polish_topic, polish_vocab, polish_fix,
+                translate_to,
+                language, initial_prompt, parallel, encoder,
+                no_cache, no_viral,
             ],
             outputs=[status, video_preview, files_list, meta_display, meta_json, dummy],
         )
 
         gr.Markdown(
             "---\n"
-            "*Output clips tersimpan di `Output_Clips/`. Jalankan dari terminal: "
-            "`python app.py` → buka http://127.0.0.1:7860*"
+            "📂 Output tersimpan di `Output_Clips/`. File `.meta.json` sibling berisi title/description/hashtag/hook.\n"
+            "\n"
+            "⚡ **Quick Tips:**\n"
+            "- Run pertama kali: pakai **default + smart crop + strategy=ai + metadata** (kalau Groq ada)\n"
+            "- Eksperimen cepat: **max-clips 1** untuk preview, lalu scale up\n"
+            "- Typo Whisper (contoh 'straka' mestinya 'serakah'): pakai **Polish Topic** atau **Manual Fix**\n"
+            "- Multi-platform: render 3x dengan aspect berbeda (9:16 + 1:1 + 16:9)"
         )
 
     return app
