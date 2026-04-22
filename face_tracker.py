@@ -391,6 +391,6 @@ def compute_smart_crop_x(
         transition_curve=transition_curve,
     )
     compressed = _compress_keyframes(smoothed)
-    # Linear interp di expression karena state machine sudah apply curve sendiri
-    # (hindari double-easing yang bikin transisi terasa lebih lambat).
-    return build_crop_x_expression(compressed, crop_width_fraction, start, easing="linear")
+    # Smoothstep di expression antar keyframe — velocity tapers off di awal
+    # & akhir tiap segment (S-curve), bikin pergerakan lebih mulus tanpa jerk.
+    return build_crop_x_expression(compressed, crop_width_fraction, start, easing="smoothstep")

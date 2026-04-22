@@ -45,9 +45,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Clipping strategy
     p.add_argument("--strategy", default="density",
-                   choices=["density", "highlight", "both"],
+                   choices=["density", "highlight", "both", "ai"],
                    help="density=bagi 60s berbasis kepadatan bicara (default); "
-                        "highlight=pilih berdasarkan keyword/hook; both=dua-duanya")
+                        "highlight=pilih berdasarkan keyword/hook; both=dua-duanya; "
+                        "ai=LLM pilih momen viral-worthy (butuh GROQ_API_KEY)")
 
     # Density-based options
     p.add_argument("--target-duration", type=float, default=60.0,
@@ -98,6 +99,11 @@ def build_parser() -> argparse.ArgumentParser:
     # UX
     p.add_argument("-y", "--yes", action="store_true",
                    help="Skip mode interaktif, langsung pakai default/flag")
+
+    # AI metadata (Groq LLM)
+    p.add_argument("--ai-metadata", action="store_true",
+                   help="Generate viral title/description/hashtag via Groq LLM "
+                        "(butuh GROQ_API_KEY di .env — gratis di console.groq.com)")
 
     # Skip flags
     p.add_argument("--no-transcribe", action="store_true",
@@ -268,6 +274,30 @@ def main() -> None:
             console.print(f"  [cyan]highlight[/cyan] → {len(hl)} potongan")
             clips_meta.extend({**h, "kind": "highlight"} for h in hl)
 
+        if args.strategy == "ai":
+            try:
+                from ai_metadata import generate_smart_highlights
+                ai_max = args.max_clips if args.max_clips > 0 else 5
+                ai_clips = generate_smart_highlights(
+                    transcript["segments"],
+                    max_clips=ai_max,
+                    target_duration=args.target_duration,
+                    min_duration=args.min_clip_duration,
+                    max_duration=args.max_clip_duration,
+                )
+                console.print(f"  [cyan]ai[/cyan] → {len(ai_clips)} potongan viral-worthy")
+                clips_meta.extend(ai_clips)
+            except Exception as e:
+                console.print(f"  [yellow]⚠ AI highlight gagal: {e}[/yellow]")
+                console.print("  [dim]Fallback ke density strategy...[/dim]")
+                dens = group_by_density(
+                    transcript["segments"],
+                    target_duration=args.target_duration,
+                    silence_threshold=args.silence_threshold,
+                    min_duration=args.min_clip_duration,
+                )
+                clips_meta.extend({**d, "kind": "density"} for d in dens)
+
         if not clips_meta:
             console.print("  [yellow]⚠ Tidak ada potongan yang memenuhi kriteria.[/yellow]")
             r["clips"] = []
@@ -301,6 +331,27 @@ def main() -> None:
             smart_crop=args.smart_crop,
         )
         r["clips"] = [str(p) for p in clip_paths]
+
+        # --- AI metadata (opt-in): generate title/description/hashtag per clip ---
+        if args.ai_metadata and clip_paths:
+            try:
+                from ai_metadata import generate_metadata, save_metadata, format_for_display
+                console.print(f"\n[bold cyan]Generate AI metadata ({len(clip_paths)} clip)...[/bold cyan]")
+                for idx, (clip_path, meta_entry) in enumerate(zip(clip_paths, clips_meta), start=1):
+                    clip_text = " ".join(
+                        s["text"] for s in transcript["segments"]
+                        if s["end"] > meta_entry["start"] and s["start"] < meta_entry["end"]
+                    )
+                    try:
+                        metadata = generate_metadata(clip_text)
+                        out_meta = save_metadata(metadata, Path(clip_path))
+                        console.print(f"\n[{idx}/{len(clip_paths)}] {Path(clip_path).name}")
+                        console.print(format_for_display(metadata))
+                        console.print(f"  [dim]saved: {out_meta.name}[/dim]")
+                    except Exception as e:
+                        console.print(f"  [yellow]⚠ AI metadata gagal untuk clip {idx}: {e}[/yellow]")
+            except RuntimeError as e:
+                console.print(f"\n[red]AI metadata di-skip: {e}[/red]")
 
     # --- Ringkasan ---
     total_clips = sum(len(r.get("clips", [])) for r in results)
