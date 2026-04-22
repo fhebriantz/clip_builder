@@ -47,6 +47,39 @@ def load_model(
     return _model_cache[key]
 
 
+def _cache_meta_match(cached: dict, model_size: str, language: str | None,
+                      initial_prompt: str | None) -> bool:
+    """Cek apakah cache valid untuk parameter sekarang."""
+    meta = cached.get("_cache_meta") or {}
+    return (
+        meta.get("model_size") == model_size
+        and meta.get("language") == language
+        and meta.get("initial_prompt") == initial_prompt
+    )
+
+
+def load_cached_transcript(
+    wav_path: Path,
+    cache_dir: Path,
+    model_size: str,
+    language: str | None,
+    initial_prompt: str | None,
+) -> dict | None:
+    """Return transkrip cached kalau ada dan parameter match. None kalau perlu re-transcribe."""
+    cache_file = cache_dir / f"{wav_path.stem}.json"
+    if not cache_file.exists():
+        return None
+    try:
+        data = json.loads(cache_file.read_text())
+        if not _cache_meta_match(data, model_size, language, initial_prompt):
+            return None
+        # Update audio path ke lokasi aktual (kalau pindah workdir)
+        data["audio"] = str(wav_path)
+        return data
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def transcribe(
     wav_path: Path,
     language: str | None = None,
@@ -88,6 +121,12 @@ def transcribe(
         "language_probability": round(info.language_probability, 3),
         "duration": round(info.duration, 2),
         "segments": segments,
+        # Metadata untuk cache validation di run berikutnya
+        "_cache_meta": {
+            "model_size": model_size,
+            "language": language,
+            "initial_prompt": initial_prompt,
+        },
     }
 
 

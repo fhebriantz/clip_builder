@@ -26,7 +26,7 @@ def _env_file_has_groq() -> bool:
 from accel import describe as describe_accel, set_encoder_override
 from downloader import process_input
 from highlighter import generate_clips, group_by_density, pick_highlights, save_highlights
-from transcriber import save_srt, save_transcript, transcribe
+from transcriber import load_cached_transcript, save_srt, save_transcript, transcribe
 
 console = Console()
 
@@ -138,6 +138,8 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Skip transkripsi & highlight (hanya download + WAV)")
     p.add_argument("--no-clip", action="store_true",
                    help="Skip pemotongan clip (tetap transkripsi)")
+    p.add_argument("--no-cache", action="store_true",
+                   help="Paksa re-transcribe, abaikan cache di transcripts/")
     return p
 
 
@@ -305,16 +307,33 @@ def main() -> None:
         video = Path(r["video_path"])
         console.print(f"\n[{i}/{len(results)}] {wav.name}")
 
-        transcript = transcribe(
-            wav,
-            language=language,
-            model_size=args.model,
-            initial_prompt=args.initial_prompt,
-        )
-        console.print(
-            f"  [green]✓[/green] {len(transcript['segments'])} segmen · "
-            f"{transcript['duration']}s · lang={transcript['language']}"
-        )
+        # Cek cache dulu — kalau parameter match, skip Whisper (hemat 15+ menit)
+        transcript = None
+        if not args.no_cache:
+            cached = load_cached_transcript(
+                wav, transcript_dir,
+                model_size=args.model,
+                language=language,
+                initial_prompt=args.initial_prompt,
+            )
+            if cached is not None:
+                transcript = cached
+                console.print(
+                    f"  [green]✓ cache hit[/green] {len(cached['segments'])} segmen "
+                    f"(model={args.model}, skip Whisper)"
+                )
+
+        if transcript is None:
+            transcript = transcribe(
+                wav,
+                language=language,
+                model_size=args.model,
+                initial_prompt=args.initial_prompt,
+            )
+            console.print(
+                f"  [green]✓[/green] {len(transcript['segments'])} segmen · "
+                f"{transcript['duration']}s · lang={transcript['language']}"
+            )
 
         # --- AI Polish (opt-in): fix typo + hapus filler di transkrip ---
         if args.ai_polish:
