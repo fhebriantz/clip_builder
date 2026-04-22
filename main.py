@@ -397,22 +397,8 @@ def main() -> None:
                 f"{transcript['duration']}s · lang={transcript['language']}"
             )
 
-        # --- AI Translate (opt-in): ganti subtitle ke bahasa target ---
-        if args.ai_translate:
-            try:
-                from ai_metadata import translate_subtitles
-                console.print(f"  [cyan]AI translate → {args.ai_translate}...[/cyan]")
-                translated = translate_subtitles(
-                    transcript["segments"],
-                    target_language=args.ai_translate,
-                )
-                transcript["segments"] = translated
-                transcript["language"] = args.ai_translate
-                console.print(f"  [green]✓[/green] {len(translated)} segmen translated to {args.ai_translate}")
-            except Exception as e:
-                console.print(f"  [yellow]⚠ AI translate gagal: {e}. Pakai bahasa asli.[/yellow]")
-
         # --- AI Polish (opt-in): fix typo + hapus filler di transkrip ---
+        # Polish = permanent upgrade, OK di-save ke cache (boleh di-reuse run berikutnya)
         if args.ai_polish:
             try:
                 from ai_metadata import polish_subtitles
@@ -434,11 +420,41 @@ def main() -> None:
             except Exception as e:
                 console.print(f"  [yellow]⚠ AI polish gagal: {e}. Pakai transkrip raw.[/yellow]")
 
-        # Save JSON + SRT (setelah polish kalau aktif)
+        # Save JSON + SRT dalam bahasa ASLI (polish OK, translate BELUM).
+        # Ini jadi cache untuk run berikutnya — user yang tidak pakai --ai-translate
+        # akan dapat transkrip asli, bukan translated.
         json_path = save_transcript(transcript, transcript_dir)
         srt_path = save_srt(transcript, transcript_dir)
         r["transcript_json"] = str(json_path)
         r["transcript_srt"] = str(srt_path)
+
+        # --- AI Translate (opt-in): APPLY SETELAH save, volatile untuk run ini saja ---
+        # Translate tidak ter-save ke JSON cache — next run tanpa --ai-translate
+        # tetap dapat transkrip bahasa asli. SRT bahasa target disimpan terpisah.
+        if args.ai_translate:
+            try:
+                from ai_metadata import translate_subtitles
+                console.print(f"  [cyan]AI translate → {args.ai_translate}...[/cyan]")
+                translated = translate_subtitles(
+                    transcript["segments"],
+                    target_language=args.ai_translate,
+                )
+                # In-memory copy untuk clip rendering downstream
+                transcript = {
+                    **transcript,
+                    "segments": translated,
+                    "language": args.ai_translate,
+                }
+                # Save translated SRT sebelah, suffix bahasa (tidak overwrite asli)
+                translated_srt = transcript_dir / f"{wav.stem}.{args.ai_translate}.srt"
+                from transcriber import transcript_to_srt
+                translated_srt.write_text(transcript_to_srt(transcript))
+                console.print(
+                    f"  [green]✓[/green] {len(translated)} segmen translated · "
+                    f"SRT: {translated_srt.name}"
+                )
+            except Exception as e:
+                console.print(f"  [yellow]⚠ AI translate gagal: {e}. Pakai bahasa asli.[/yellow]")
 
         if args.no_clip:
             continue
