@@ -274,13 +274,15 @@ def generate_smart_highlights(
     return result
 
 
-_POLISH_SYSTEM_PROMPT = """Kamu editor subtitle profesional untuk konten viral Indonesia.
+_POLISH_SYSTEM_PROMPT_BASE = """Kamu editor subtitle profesional untuk konten viral Indonesia.
 
 TUGAS: polish subtitle raw (dari Whisper AI) jadi subtitle profesional yang siap ditampilkan.
 
 RULES YANG HARUS DIIKUTI:
 1. Hapus FILLER WORDS: umm, uh, eh, apa ya, ya kan, nah itu, gitu deh, anu, jadi gimana ya
-2. Fix TYPO/misheard yang jelas (contoh: "conesi" → "koneksi", "millenia" → "milenial")
+2. Fix TYPO/misheard yang jelas. Pertimbangkan konteks kalimat & topik video — kata yang Whisper dengar
+   mungkin hampir mirip fonetik tapi secara makna salah. Contoh:
+     "conesi" → "koneksi", "straka" → bisa "strata" atau "serakah" (lihat konteks!)
 3. Kapitalisasi: awal kalimat kapital, nama orang/merek kapital, sisanya kecil
 4. Tanda baca minimal: titik akhir kalimat, koma jika perlu jeda
 5. JANGAN ubah makna atau konteks asli
@@ -298,12 +300,38 @@ OUTPUT WAJIB JSON persis:
   ]
 }
 
-CRITICAL: jumlah segments output HARUS SAMA dengan input. Kalau ada baris yang tidak perlu di-polish,
-tetap output dengan text aslinya."""
+CRITICAL: jumlah segments output HARUS SAMA dengan input."""
+
+
+def _build_polish_prompt(topic_hint: str | None, vocabulary: list[str] | None) -> str:
+    """Tambah topic context + vocabulary hint ke base prompt."""
+    prompt = _POLISH_SYSTEM_PROMPT_BASE
+    extras = []
+    if topic_hint:
+        extras.append(f"KONTEKS VIDEO: {topic_hint}")
+    if vocabulary:
+        extras.append(
+            "KATA PENTING yang mungkin muncul (pakai ejaan ini kalau ada yang mirip): "
+            + ", ".join(vocabulary)
+        )
+    if extras:
+        prompt += "\n\n" + "\n\n".join(extras)
+    return prompt
+
+
+def _apply_corrections(text: str, corrections: dict[str, str]) -> str:
+    """Replace case-insensitive dengan preserve leading capital kalau ada."""
+    import re
+    out = text
+    for wrong, right in corrections.items():
+        pattern = re.compile(rf"\b{re.escape(wrong)}\b", re.IGNORECASE)
+        out = pattern.sub(right, out)
+    return out
 
 
 def _polish_batch(
     segments: list[dict],
+    system_prompt: str,
     model: str,
     temperature: float,
 ) -> dict[int, str]:
@@ -315,7 +343,7 @@ def _polish_batch(
     chat = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": _POLISH_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": f"Polish {len(segments)} baris subtitle berikut:\n\n{numbered}"},
         ],
         response_format={"type": "json_object"},
@@ -330,38 +358,53 @@ def _polish_batch(
 
 def polish_subtitles(
     segments: list[dict],
+    topic_hint: str | None = None,
+    vocabulary: list[str] | None = None,
+    corrections: dict[str, str] | None = None,
     batch_size: int = 80,
     model: str = "llama-3.3-70b-versatile",
     temperature: float = 0.3,
 ) -> list[dict]:
-    """Polish subtitle text via LLM. Preserve timing, drop word-level timestamps
-    (karena text berubah, word alignment tidak valid lagi).
+    """Polish subtitle text via LLM.
 
-    Untuk video panjang: batch ke grup 80 segmen (aman untuk 4k token output limit).
+    topic_hint: deskripsi singkat topik video, misal "mindset bisnis vs serakah".
+      LLM pakai ini saat fix typo ambigu (misal straka → serakah vs strata).
+
+    vocabulary: list kata penting yang mungkin muncul (ejaan benar).
+      LLM prefer ejaan ini untuk kata yang fonetik mirip.
+
+    corrections: dict {wrong: right} untuk manual override 100% reliable.
+      Diaplikasikan SETELAH LLM polish (jadi menang atas hasil LLM).
     """
     if not segments:
         return []
 
+    # Apply corrections SEBELUM polish — biar LLM lihat kata benar, tidak ubah ulang
+    if corrections:
+        segments = [
+            {**s, "text": _apply_corrections(s["text"], corrections)}
+            for s in segments
+        ]
+
+    system_prompt = _build_polish_prompt(topic_hint, vocabulary)
     polished_all: dict[int, str] = {}
 
     for batch_start in range(0, len(segments), batch_size):
         batch = segments[batch_start : batch_start + batch_size]
-        batch_result = _polish_batch(batch, model, temperature)
-        # Map idx lokal batch → idx global
+        batch_result = _polish_batch(batch, system_prompt, model, temperature)
         for local_idx, text in batch_result.items():
-            polished_all[batch_start + local_idx] = text  # local 1-based, target 1-based global
+            polished_all[batch_start + local_idx] = text
 
     result: list[dict] = []
     for i, seg in enumerate(segments, start=1):
         new_text = polished_all.get(i, seg["text"]).strip()
         if not new_text:
             new_text = seg["text"]
-        new_seg = {
-            "start": seg["start"],
-            "end": seg["end"],
-            "text": new_text,
-        }
-        result.append(new_seg)
+        # Apply corrections SEKALI LAGI setelah polish — safety net kalau LLM
+        # entah kenapa revert kata yang sudah di-fix
+        if corrections:
+            new_text = _apply_corrections(new_text, corrections)
+        result.append({"start": seg["start"], "end": seg["end"], "text": new_text})
 
     return result
 

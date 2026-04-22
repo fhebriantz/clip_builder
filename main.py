@@ -107,6 +107,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ai-polish", action="store_true",
                    help="Polish transkrip Whisper: hapus filler, fix typo, "
                         "konsistensi kapital (butuh GROQ_API_KEY)")
+    p.add_argument("--polish-topic", default=None,
+                   help="Deskripsi topik video untuk bantu polish fix typo ambigu "
+                        "(contoh: 'mindset bisnis dan orang serakah')")
+    p.add_argument("--polish-vocab", default="",
+                   help="Kata-kata penting dipisah koma biar LLM pakai ejaan ini "
+                        "(contoh: 'serakah,rakus,koneksi,milenial')")
+    p.add_argument("--polish-fix", default="",
+                   help="Manual corrections format 'salah=benar,salah2=benar2' "
+                        "(contoh: 'straka=serakah,conesi=koneksi')")
 
     # Skip flags
     p.add_argument("--no-transcribe", action="store_true",
@@ -248,8 +257,19 @@ def main() -> None:
         if args.ai_polish:
             try:
                 from ai_metadata import polish_subtitles
+                vocab = [v.strip() for v in args.polish_vocab.split(",") if v.strip()]
+                fix_pairs = {}
+                for pair in args.polish_fix.split(","):
+                    if "=" in pair:
+                        k, v = pair.split("=", 1)
+                        fix_pairs[k.strip()] = v.strip()
                 console.print(f"  [cyan]AI polish transkrip...[/cyan]")
-                polished = polish_subtitles(transcript["segments"])
+                polished = polish_subtitles(
+                    transcript["segments"],
+                    topic_hint=args.polish_topic,
+                    vocabulary=vocab or None,
+                    corrections=fix_pairs or None,
+                )
                 transcript["segments"] = polished
                 console.print(f"  [green]✓[/green] transkrip ter-polish ({len(polished)} segmen)")
             except Exception as e:
