@@ -274,6 +274,98 @@ def generate_smart_highlights(
     return result
 
 
+_POLISH_SYSTEM_PROMPT = """Kamu editor subtitle profesional untuk konten viral Indonesia.
+
+TUGAS: polish subtitle raw (dari Whisper AI) jadi subtitle profesional yang siap ditampilkan.
+
+RULES YANG HARUS DIIKUTI:
+1. Hapus FILLER WORDS: umm, uh, eh, apa ya, ya kan, nah itu, gitu deh, anu, jadi gimana ya
+2. Fix TYPO/misheard yang jelas (contoh: "conesi" → "koneksi", "millenia" → "milenial")
+3. Kapitalisasi: awal kalimat kapital, nama orang/merek kapital, sisanya kecil
+4. Tanda baca minimal: titik akhir kalimat, koma jika perlu jeda
+5. JANGAN ubah makna atau konteks asli
+6. JANGAN terjemahkan — bahasa tetap sama dengan input
+7. JANGAN merge atau split line — jumlah baris output HARUS SAMA persis dengan input
+8. Pertahankan slang/gaya bicara natural (gue, lo, bro, dll) — JANGAN formalisasi berlebihan
+9. Pertahankan nomor urut (idx) dari input
+
+OUTPUT WAJIB JSON persis:
+{
+  "segments": [
+    {"idx": 1, "text": "polished text"},
+    {"idx": 2, "text": "polished text"},
+    ...
+  ]
+}
+
+CRITICAL: jumlah segments output HARUS SAMA dengan input. Kalau ada baris yang tidak perlu di-polish,
+tetap output dengan text aslinya."""
+
+
+def _polish_batch(
+    segments: list[dict],
+    model: str,
+    temperature: float,
+) -> dict[int, str]:
+    """Polish satu batch segments, return {idx: polished_text}."""
+    client = _get_client()
+
+    numbered = "\n".join(f"{i}. {s['text']}" for i, s in enumerate(segments, start=1))
+
+    chat = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": _POLISH_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Polish {len(segments)} baris subtitle berikut:\n\n{numbered}"},
+        ],
+        response_format={"type": "json_object"},
+        temperature=temperature,
+        max_completion_tokens=4000,
+    )
+    raw = chat.choices[0].message.content
+    data = json.loads(raw)
+    polished = data.get("segments") or []
+    return {int(p["idx"]): str(p.get("text", "")).strip() for p in polished if "idx" in p}
+
+
+def polish_subtitles(
+    segments: list[dict],
+    batch_size: int = 80,
+    model: str = "llama-3.3-70b-versatile",
+    temperature: float = 0.3,
+) -> list[dict]:
+    """Polish subtitle text via LLM. Preserve timing, drop word-level timestamps
+    (karena text berubah, word alignment tidak valid lagi).
+
+    Untuk video panjang: batch ke grup 80 segmen (aman untuk 4k token output limit).
+    """
+    if not segments:
+        return []
+
+    polished_all: dict[int, str] = {}
+
+    for batch_start in range(0, len(segments), batch_size):
+        batch = segments[batch_start : batch_start + batch_size]
+        batch_result = _polish_batch(batch, model, temperature)
+        # Map idx lokal batch → idx global
+        for local_idx, text in batch_result.items():
+            polished_all[batch_start + local_idx] = text  # local 1-based, target 1-based global
+
+    result: list[dict] = []
+    for i, seg in enumerate(segments, start=1):
+        new_text = polished_all.get(i, seg["text"]).strip()
+        if not new_text:
+            new_text = seg["text"]
+        new_seg = {
+            "start": seg["start"],
+            "end": seg["end"],
+            "text": new_text,
+        }
+        result.append(new_seg)
+
+    return result
+
+
 def format_for_display(metadata: dict) -> str:
     """Format metadata untuk ditampilkan ke terminal."""
     lines = ["\n[bold]Metadata AI:[/bold]"]

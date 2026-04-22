@@ -100,10 +100,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-y", "--yes", action="store_true",
                    help="Skip mode interaktif, langsung pakai default/flag")
 
-    # AI metadata (Groq LLM)
+    # AI features (Groq LLM)
     p.add_argument("--ai-metadata", action="store_true",
                    help="Generate viral title/description/hashtag via Groq LLM "
                         "(butuh GROQ_API_KEY di .env — gratis di console.groq.com)")
+    p.add_argument("--ai-polish", action="store_true",
+                   help="Polish transkrip Whisper: hapus filler, fix typo, "
+                        "konsistensi kapital (butuh GROQ_API_KEY)")
 
     # Skip flags
     p.add_argument("--no-transcribe", action="store_true",
@@ -236,14 +239,27 @@ def main() -> None:
             model_size=args.model,
             initial_prompt=args.initial_prompt,
         )
-        json_path = save_transcript(transcript, transcript_dir)
-        srt_path = save_srt(transcript, transcript_dir)
-        r["transcript_json"] = str(json_path)
-        r["transcript_srt"] = str(srt_path)
         console.print(
             f"  [green]✓[/green] {len(transcript['segments'])} segmen · "
             f"{transcript['duration']}s · lang={transcript['language']}"
         )
+
+        # --- AI Polish (opt-in): fix typo + hapus filler di transkrip ---
+        if args.ai_polish:
+            try:
+                from ai_metadata import polish_subtitles
+                console.print(f"  [cyan]AI polish transkrip...[/cyan]")
+                polished = polish_subtitles(transcript["segments"])
+                transcript["segments"] = polished
+                console.print(f"  [green]✓[/green] transkrip ter-polish ({len(polished)} segmen)")
+            except Exception as e:
+                console.print(f"  [yellow]⚠ AI polish gagal: {e}. Pakai transkrip raw.[/yellow]")
+
+        # Save JSON + SRT (setelah polish kalau aktif)
+        json_path = save_transcript(transcript, transcript_dir)
+        srt_path = save_srt(transcript, transcript_dir)
+        r["transcript_json"] = str(json_path)
+        r["transcript_srt"] = str(srt_path)
 
         if args.no_clip:
             continue
