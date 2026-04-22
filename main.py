@@ -123,6 +123,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--ai-hook", action="store_true",
                    help="Detect 3-5 detik hook paling kuat di tiap clip, "
                         "simpan timestamp + text ke meta.json")
+    p.add_argument("--ai-translate", default=None,
+                   help="Translate subtitle ke bahasa target (contoh: 'en', 'ja', "
+                        "'es', 'Chinese'). Burn-in subtitle terjemahan ke video.")
     p.add_argument("--render-hook", action="store_true",
                    help="Juga render hook clip 3-5 detik sebagai file teaser terpisah "
                         "(implies --ai-hook)")
@@ -340,6 +343,21 @@ def main() -> None:
                 f"  [green]✓[/green] {len(transcript['segments'])} segmen · "
                 f"{transcript['duration']}s · lang={transcript['language']}"
             )
+
+        # --- AI Translate (opt-in): ganti subtitle ke bahasa target ---
+        if args.ai_translate:
+            try:
+                from ai_metadata import translate_subtitles
+                console.print(f"  [cyan]AI translate → {args.ai_translate}...[/cyan]")
+                translated = translate_subtitles(
+                    transcript["segments"],
+                    target_language=args.ai_translate,
+                )
+                transcript["segments"] = translated
+                transcript["language"] = args.ai_translate
+                console.print(f"  [green]✓[/green] {len(translated)} segmen translated to {args.ai_translate}")
+            except Exception as e:
+                console.print(f"  [yellow]⚠ AI translate gagal: {e}. Pakai bahasa asli.[/yellow]")
 
         # --- AI Polish (opt-in): fix typo + hapus filler di transkrip ---
         if args.ai_polish:

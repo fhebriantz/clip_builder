@@ -497,6 +497,91 @@ def detect_hook_moment(
         return None
 
 
+_TRANSLATE_SYSTEM_PROMPT = """You are a professional subtitle translator for viral short-form video content.
+
+TASK: translate subtitle text from source language to target language "{target_lang}".
+
+STRICT RULES:
+1. Preserve meaning, tone, and natural speaking style (don't formalize casual speech).
+2. Keep each line as a standalone subtitle — DO NOT merge or split lines.
+3. Output MUST have EXACT SAME number of idx as input.
+4. Preserve the punch/emotion of viral content — translation should still be engaging.
+5. If source has slang ("gue", "lo", "bro"), translate to equivalent casual register in target.
+6. Keep proper nouns (names, brands) as-is unless target language has standard transliteration.
+7. Do NOT add translator's notes, explanations, or commentary.
+
+OUTPUT MUST BE JSON with structure:
+{{
+  "segments": [
+    {{"idx": 1, "text": "translated text"}},
+    {{"idx": 2, "text": "translated text"}},
+    ...
+  ]
+}}
+
+CRITICAL: number of segments output MUST equal number of input lines."""
+
+
+def _translate_batch(
+    segments: list[dict],
+    target_lang: str,
+    model: str,
+    temperature: float,
+) -> dict[int, str]:
+    """Translate one batch, return {idx: translated_text}."""
+    client = _get_client()
+
+    numbered = "\n".join(f"{i}. {s['text']}" for i, s in enumerate(segments, start=1))
+    system = _TRANSLATE_SYSTEM_PROMPT.replace("{target_lang}", target_lang)
+
+    chat = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": f"Translate {len(segments)} subtitle lines to {target_lang}:\n\n{numbered}"},
+        ],
+        response_format={"type": "json_object"},
+        temperature=temperature,
+        max_completion_tokens=4000,
+    )
+    raw = chat.choices[0].message.content
+    data = json.loads(raw)
+    translated = data.get("segments") or []
+    return {int(p["idx"]): str(p.get("text", "")).strip() for p in translated if "idx" in p}
+
+
+def translate_subtitles(
+    segments: list[dict],
+    target_language: str,
+    batch_size: int = 80,
+    model: str = "llama-3.3-70b-versatile",
+    temperature: float = 0.4,
+) -> list[dict]:
+    """Translate subtitle text to target language, preserve timing.
+
+    target_language: ISO code ("en", "ja", "es", "zh", "fr") atau nama bahasa
+        ("English", "Japanese", "Spanish", "Chinese", "French").
+
+    Drop word-level timestamps (text berubah, word alignment tidak valid).
+    """
+    if not segments:
+        return []
+
+    translated_all: dict[int, str] = {}
+
+    for batch_start in range(0, len(segments), batch_size):
+        batch = segments[batch_start : batch_start + batch_size]
+        batch_result = _translate_batch(batch, target_language, model, temperature)
+        for local_idx, text in batch_result.items():
+            translated_all[batch_start + local_idx] = text
+
+    result: list[dict] = []
+    for i, seg in enumerate(segments, start=1):
+        new_text = translated_all.get(i, seg["text"]).strip() or seg["text"]
+        result.append({"start": seg["start"], "end": seg["end"], "text": new_text})
+    return result
+
+
 def format_for_display(metadata: dict) -> str:
     """Format metadata untuk ditampilkan ke terminal."""
     lines = ["\n[bold]Metadata AI:[/bold]"]
