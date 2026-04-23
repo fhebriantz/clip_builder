@@ -616,6 +616,7 @@ def build_app():
             fn=lambda v: gr.update(visible=v),
             inputs=use_polish,
             outputs=polish_fields,
+            queue=False,
         )
 
         # === Event: show/hide translate field ===
@@ -623,14 +624,15 @@ def build_app():
             fn=lambda v: gr.update(visible=v),
             inputs=use_translate,
             outputs=translate_to,
+            queue=False,
         )
 
         # === Event: render_hook / open_hook auto-enable use_hook ===
         def _maybe_enable_hook(checked):
             return gr.update(value=True) if checked else gr.update()
 
-        render_hook.change(fn=_maybe_enable_hook, inputs=render_hook, outputs=use_hook)
-        open_hook.change(fn=_maybe_enable_hook, inputs=open_hook, outputs=use_hook)
+        render_hook.change(fn=_maybe_enable_hook, inputs=render_hook, outputs=use_hook, queue=False)
+        open_hook.change(fn=_maybe_enable_hook, inputs=open_hook, outputs=use_hook, queue=False)
 
         # === Event: strategy menentukan field yang relevan ===
         def _strategy_visibility(s):
@@ -646,6 +648,7 @@ def build_app():
             fn=_strategy_visibility,
             inputs=strategy,
             outputs=[silence_threshold, highlight_keywords, min_score],
+            queue=False,
         )
 
         # === Event: Matikan Semua AI ===
@@ -671,6 +674,7 @@ def build_app():
                 use_translate, translate_to,
                 strategy,
             ],
+            queue=False,
         )
 
         # === Event: Buka Folder Output ===
