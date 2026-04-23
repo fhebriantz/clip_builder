@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from faster_whisper import WhisperModel
@@ -108,17 +109,30 @@ def transcribe(
     """
     model = load_model(model_size)
 
-    segments_iter, info = model.transcribe(
-        str(wav_path),
+    _transcribe_kwargs = dict(
         language=language,
         beam_size=5,
         vad_filter=vad_filter,
         initial_prompt=initial_prompt,
         word_timestamps=True,
     )
+    try:
+        segments_iter, info = model.transcribe(str(wav_path), **_transcribe_kwargs)
+        # Materialize sekarang agar RuntimeError CUDA tertangkap di sini
+        segments_raw = list(segments_iter)
+    except RuntimeError as e:
+        _is_cuda_err = any(k in str(e).lower() for k in ("cuda", "cublas", "dll", "cudnn"))
+        if not _is_cuda_err:
+            raise
+        console.print(f"  [yellow]CUDA runtime error: {e}[/yellow]")
+        console.print("  [yellow]Fallback ke CPU/int8...[/yellow]")
+        cpu_threads = min(os.cpu_count() or 4, 8)
+        model = load_model(model_size, device="cpu", compute_type="int8", cpu_threads=cpu_threads)
+        segments_iter, info = model.transcribe(str(wav_path), **_transcribe_kwargs)
+        segments_raw = list(segments_iter)
 
     segments = []
-    for s in segments_iter:
+    for s in segments_raw:
         seg = {"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip()}
         if s.words:
             seg["words"] = [
