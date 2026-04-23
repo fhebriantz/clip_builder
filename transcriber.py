@@ -31,19 +31,31 @@ def load_model(
 
     key = f"{size}-{device}-{compute_type}-{cpu_threads}"
     if key not in _model_cache:
-        console.print(
-            f"[cyan]Loading Whisper '{size}' "
-            f"(device={device}, compute={compute_type}"
-            + (f", threads={cpu_threads}" if device == "cpu" else "")
-            + ")...[/cyan]"
+        _FALLBACK: list[str] = (
+            ["int8_float16", "int8", "float32"] if device == "cuda"
+            else ["int8", "float32"]
         )
-        _model_cache[key] = WhisperModel(
-            size,
-            device=device,
-            compute_type=compute_type,
-            cpu_threads=cpu_threads if device == "cpu" else 0,
-            num_workers=1,
-        )
+        fallbacks = [compute_type] + [f for f in _FALLBACK if f != compute_type]
+        for ct in fallbacks:
+            console.print(
+                f"[cyan]Loading Whisper '{size}' "
+                f"(device={device}, compute={ct}"
+                + (f", threads={cpu_threads}" if device == "cpu" else "")
+                + ")...[/cyan]"
+            )
+            try:
+                _model_cache[key] = WhisperModel(
+                    size,
+                    device=device,
+                    compute_type=ct,
+                    cpu_threads=cpu_threads if device == "cpu" else 0,
+                    num_workers=1,
+                )
+                break
+            except ValueError as e:
+                console.print(f"  [yellow]compute={ct} tidak didukung: {e}. Coba berikutnya...[/yellow]")
+        else:
+            raise RuntimeError(f"Tidak ada compute type yang didukung untuk device={device}")
     return _model_cache[key]
 
 

@@ -73,7 +73,8 @@ def detect_whisper_device() -> tuple[str, str, int]:
     try:
         import torch
         if torch.cuda.is_available():
-            return "cuda", "float16", 0
+            # int8_float16 lebih kompatibel dari float16 murni (support Pascal+)
+            return "cuda", "int8_float16", 0
     except Exception:
         pass
     threads = min(os.cpu_count() or 4, 8)
