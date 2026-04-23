@@ -138,6 +138,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--render-hook", action="store_true",
                    help="Juga render hook clip 3-5 detik sebagai file teaser terpisah "
                         "(implies --ai-hook)")
+    p.add_argument("--open-hook", action="store_true",
+                   help="Prepend hook 3-5 detik ke awal setiap clip (cold open TikTok style). "
+                        "Clip output = [hook moment] + [clip penuh]. Implies --ai-hook.")
     p.add_argument("--ai-polish", action="store_true",
                    help="Polish transkrip Whisper: hapus filler, fix typo, "
                         "konsistensi kapital (butuh GROQ_API_KEY)")
@@ -565,7 +568,7 @@ def main() -> None:
 
         # --- AI metadata + hook detection (opt-in) ---
         want_metadata = args.ai_metadata
-        want_hook = args.ai_hook or args.render_hook
+        want_hook = args.ai_hook or args.render_hook or args.open_hook
         if (want_metadata or want_hook) and clip_paths:
             try:
                 from ai_metadata import (
@@ -615,6 +618,29 @@ def main() -> None:
                                         check=True,
                                     )
                                     console.print(f"  [green]✂[/green] hook teaser: {hook_out.name}")
+                                if args.open_hook:
+                                    # Prepend hook ke awal clip (cold open TikTok style):
+                                    # output = [hook_segment 3-5s] + [clip penuh dari awal]
+                                    _clip = Path(clip_path).resolve()
+                                    _tmp = _clip.with_name(_clip.stem + "_opentmp.mp4")
+                                    _sp.run(
+                                        ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                                         "-ss", f"{hook['hook_start']:.3f}",
+                                         "-t", f"{hook['hook_duration']:.3f}",
+                                         "-i", str(_clip),
+                                         "-i", str(_clip),
+                                         "-filter_complex",
+                                         "[0:v][0:a][1:v][1:a]concat=n=2:v=1:a=1[v][a]",
+                                         "-map", "[v]", "-map", "[a]",
+                                         "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                                         "-c:a", "aac", "-b:a", "128k",
+                                         "-movflags", "+faststart",
+                                         str(_tmp)],
+                                        check=True,
+                                    )
+                                    _clip.unlink()
+                                    _tmp.rename(_clip)
+                                    console.print(f"  [green]✂[/green] open hook: prepended {hook['hook_duration']:.1f}s ke awal {_clip.name}")
                         except Exception as e:
                             console.print(f"  [yellow]⚠ hook detection gagal: {e}[/yellow]")
 

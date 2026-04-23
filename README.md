@@ -533,6 +533,7 @@ Setiap AI feature **independent try/except** — kalau satu gagal (misal rate li
 | `--ai-metadata` | off | Generate 3 title + description + 8 hashtag per clip |
 | `--ai-hook` | off | Detect 3-5 detik hook moment per clip (simpan di `.meta.json`) |
 | `--render-hook` | off | Render file teaser mp4 3-5 detik terpisah (implies `--ai-hook`) |
+| `--open-hook` | off | Prepend hook 3-5 detik ke awal setiap clip — cold open TikTok style. Output = `[hook] + [clip penuh]`. (implies `--ai-hook`) |
 | `--ai-translate` | — | Translate subtitle ke bahasa target dan burn-in. Contoh: `en`, `ja`, `es`, `zh`, `fr`, `"Mandarin"`, `"Arabic"` (50+ bahasa) |
 | `--polish-fix` | — | Manual correction `salah=benar,salah2=benar2` (100% reliable) |
 | `--ai-metadata` | off | Generate title (3 opsi) + description + hashtag per clip |
@@ -584,8 +585,8 @@ clip_builder/
 │   ├── <video_id>.en.srt                 subtitle translated (kalau --ai-translate en)
 │   └── <video_id>_highlights.json        metadata clip
 └── Output_Clips/
-    ├── <video_id>_clip_01.mp4            main clip viral (run pertama, nama clean)
-    ├── <video_id>_clip_01_hook.mp4       hook teaser 3-5 detik (kalau --render-hook)
+    ├── <video_id>_clip_01.mp4            main clip viral — atau open hook version (kalau --open-hook)
+    ├── <video_id>_clip_01_hook.mp4       hook teaser 3-5 detik terpisah (kalau --render-hook)
     ├── <video_id>_clip_01.meta.json      {titles, description, hashtags, hook}
     ├── <video_id>_clip_01_20260422_143500.mp4   run kedua (conflict → timestamp)
     └── <video_id>_clip_01_20260422_144200.mp4   run ketiga
