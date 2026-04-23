@@ -492,34 +492,34 @@ def build_app():
                         interactive=not ai_disabled,
                         info="+10-30s & ~4k token. Burn subtitle bahasa target ke video",
                     )
-                    translate_to = gr.Dropdown(
-                        choices=[
-                            ("🇬🇧 English", "en"),
-                            ("🇯🇵 Japanese", "ja"),
-                            ("🇨🇳 Chinese (Simplified)", "zh"),
-                            ("🇰🇷 Korean", "ko"),
-                            ("🇸🇦 Arabic", "ar"),
-                            ("🇪🇸 Spanish", "es"),
-                            ("🇫🇷 French", "fr"),
-                            ("🇩🇪 German", "de"),
-                            ("🇮🇹 Italian", "it"),
-                            ("🇵🇹 Portuguese", "pt"),
-                            ("🇷🇺 Russian", "ru"),
-                            ("🇮🇳 Hindi", "hi"),
-                            ("🇹🇭 Thai", "th"),
-                            ("🇻🇳 Vietnamese", "vi"),
-                            ("🇲🇾 Malay", "ms"),
-                            ("🇳🇱 Dutch", "nl"),
-                            ("🇵🇱 Polish", "pl"),
-                            ("🇹🇷 Turkish", "tr"),
-                            ("🇸🇪 Swedish", "sv"),
-                            ("🇩🇰 Danish", "da"),
-                        ],
-                        label="Bahasa Target",
-                        info="Pilih bahasa untuk subtitle yang di-burn ke video.",
-                        visible=False,
-                        allow_custom_value=True,
-                    )
+                    with gr.Column(visible=False) as translate_container:
+                        translate_to = gr.Dropdown(
+                            choices=[
+                                ("🇬🇧 English", "en"),
+                                ("🇯🇵 Japanese", "ja"),
+                                ("🇨🇳 Chinese (Simplified)", "zh"),
+                                ("🇰🇷 Korean", "ko"),
+                                ("🇸🇦 Arabic", "ar"),
+                                ("🇪🇸 Spanish", "es"),
+                                ("🇫🇷 French", "fr"),
+                                ("🇩🇪 German", "de"),
+                                ("🇮🇹 Italian", "it"),
+                                ("🇵🇹 Portuguese", "pt"),
+                                ("🇷🇺 Russian", "ru"),
+                                ("🇮🇳 Hindi", "hi"),
+                                ("🇹🇭 Thai", "th"),
+                                ("🇻🇳 Vietnamese", "vi"),
+                                ("🇲🇾 Malay", "ms"),
+                                ("🇳🇱 Dutch", "nl"),
+                                ("🇵🇱 Polish", "pl"),
+                                ("🇹🇷 Turkish", "tr"),
+                                ("🇸🇪 Swedish", "sv"),
+                                ("🇩🇰 Danish", "da"),
+                            ],
+                            label="Bahasa Target",
+                            info="Pilih bahasa untuk subtitle yang di-burn ke video.",
+                            allow_custom_value=True,
+                        )
 
                 # — Advanced —
                 with gr.Accordion("🔧 Advanced (biarkan default kalau ragu)", open=False):
@@ -639,22 +639,24 @@ def build_app():
             inputs=use_polish,
             outputs=polish_fields,
             queue=False,
+            show_progress="hidden",
         )
 
         # === Event: show/hide translate field ===
         use_translate.change(
             fn=lambda v: gr.update(visible=v),
             inputs=use_translate,
-            outputs=translate_to,
+            outputs=translate_container,
             queue=False,
+            show_progress="hidden",
         )
 
         # === Event: render_hook / open_hook auto-enable use_hook ===
         def _maybe_enable_hook(checked):
             return gr.update(value=True) if checked else gr.update()
 
-        render_hook.change(fn=_maybe_enable_hook, inputs=render_hook, outputs=use_hook, queue=False)
-        open_hook.change(fn=_maybe_enable_hook, inputs=open_hook, outputs=use_hook, queue=False)
+        render_hook.change(fn=_maybe_enable_hook, inputs=render_hook, outputs=use_hook, queue=False, show_progress="hidden")
+        open_hook.change(fn=_maybe_enable_hook, inputs=open_hook, outputs=use_hook, queue=False, show_progress="hidden")
 
         # === Event: strategy menentukan field yang relevan ===
         def _strategy_visibility(s):
@@ -671,6 +673,7 @@ def build_app():
             inputs=strategy,
             outputs=[silence_threshold, highlight_keywords, min_score],
             queue=False,
+            show_progress="hidden",
         )
 
         # === Event: Matikan Semua AI ===
@@ -684,7 +687,7 @@ def build_app():
                 False,       # use_polish
                 gr.update(visible=False),   # polish_fields
                 False,       # use_translate
-                gr.update(visible=False),   # translate_to
+                gr.update(visible=False),   # translate_container
                 "density",   # strategy
             )
 
@@ -693,10 +696,11 @@ def build_app():
             outputs=[
                 use_metadata, use_hook, render_hook, open_hook,
                 use_polish, polish_fields,
-                use_translate, translate_to,
+                use_translate, translate_container,
                 strategy,
             ],
             queue=False,
+            show_progress="hidden",
         )
 
         # === Event: Buka Folder Output ===
