@@ -492,11 +492,33 @@ def build_app():
                         interactive=not ai_disabled,
                         info="+10-30s & ~4k token. Burn subtitle bahasa target ke video",
                     )
-                    translate_to = gr.Textbox(
+                    translate_to = gr.Dropdown(
+                        choices=[
+                            ("🇬🇧 English", "en"),
+                            ("🇯🇵 Japanese", "ja"),
+                            ("🇨🇳 Chinese (Simplified)", "zh"),
+                            ("🇰🇷 Korean", "ko"),
+                            ("🇸🇦 Arabic", "ar"),
+                            ("🇪🇸 Spanish", "es"),
+                            ("🇫🇷 French", "fr"),
+                            ("🇩🇪 German", "de"),
+                            ("🇮🇹 Italian", "it"),
+                            ("🇵🇹 Portuguese", "pt"),
+                            ("🇷🇺 Russian", "ru"),
+                            ("🇮🇳 Hindi", "hi"),
+                            ("🇹🇭 Thai", "th"),
+                            ("🇻🇳 Vietnamese", "vi"),
+                            ("🇲🇾 Malay", "ms"),
+                            ("🇳🇱 Dutch", "nl"),
+                            ("🇵🇱 Polish", "pl"),
+                            ("🇹🇷 Turkish", "tr"),
+                            ("🇸🇪 Swedish", "sv"),
+                            ("🇩🇰 Danish", "da"),
+                        ],
                         label="Bahasa Target",
-                        placeholder="en / ja / es / zh / fr / Japanese / Arabic...",
-                        info="ISO code (en, ja) atau nama lengkap ('Japanese'). 50+ bahasa.",
+                        info="Pilih bahasa untuk subtitle yang di-burn ke video.",
                         visible=False,
+                        allow_custom_value=True,
                     )
 
                 # — Advanced —
