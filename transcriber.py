@@ -9,7 +9,7 @@ from rich.console import Console
 
 from accel import detect_whisper_device
 
-console = Console()
+console = Console(legacy_windows=False)
 
 # Model pertama kali dipanggil akan auto-download ke ~/.cache/huggingface/hub
 # Ukuran: tiny(~75MB), base(~145MB), small(~465MB), medium(~1.5GB), large-v3(~3GB)

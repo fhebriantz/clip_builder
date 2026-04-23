@@ -18,7 +18,7 @@ from pathlib import Path
 
 from rich.console import Console
 
-console = Console()
+console = Console(legacy_windows=False)
 
 VAAPI_DEVICE = "/dev/dri/renderD128"
 

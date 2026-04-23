@@ -9,7 +9,7 @@ from typing import Iterable
 import yt_dlp
 from rich.console import Console
 
-console = Console()
+console = Console(legacy_windows=False)
 
 CHANNEL_URL_PATTERNS = [
     r"youtube\.com/@[\w\-\.]+",

@@ -20,7 +20,7 @@ from rich.console import Console
 
 from accel import detect_ffmpeg_encoder
 
-console = Console()
+console = Console(legacy_windows=False)
 
 # Font default per platform — DejaVu Sans hanya ada di Linux, Arial universal di Windows,
 # Helvetica default di macOS. Kalau user mau override pakai flag --font.

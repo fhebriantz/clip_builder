@@ -36,7 +36,7 @@ from accel import detect_ffmpeg_encoder, set_encoder_override
 from downloader import download_video
 from face_tracker import compute_smart_crop_x
 
-console = Console()
+console = Console(legacy_windows=False)
 LOCAL_DIR = Path("local_videos")
 
 

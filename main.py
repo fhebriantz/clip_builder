@@ -11,6 +11,10 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from rich.console import Console
 
 
@@ -29,7 +33,7 @@ from downloader import process_input
 from highlighter import generate_clips, group_by_density, pick_highlights, save_highlights
 from transcriber import load_cached_transcript, save_srt, save_transcript, transcribe
 
-console = Console()
+console = Console(legacy_windows=False)
 
 
 def build_parser() -> argparse.ArgumentParser:
