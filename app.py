@@ -495,6 +495,7 @@ def build_app():
                     with gr.Column(visible=False) as translate_container:
                         translate_to = gr.Dropdown(
                             choices=[
+                                ("🇮🇩 Indonesian", "id"),
                                 ("🇬🇧 English", "en"),
                                 ("🇯🇵 Japanese", "ja"),
                                 ("🇨🇳 Chinese (Simplified)", "zh"),
